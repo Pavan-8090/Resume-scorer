@@ -72,6 +72,14 @@ npm run install:all
 
 Create `.env` files in both `frontend/` and `backend/` directories:
 
+**backend_python/.env:**
+```env
+PORT=5000
+# Hugging Face Hub Configuration (Optional)
+HF_TOKEN=your_huggingface_token_here
+HF_MODEL_ID=all-MiniLM-L6-v2  # or PavanRathodR/APi for custom model
+```
+
 **backend/.env:**
 ```env
 PORT=5000
@@ -134,6 +142,9 @@ npm run dev:backend   # Backend on http://localhost:5000
 ### Analysis
 - `POST /api/jobs/:jobId/analyze` - Analyze resumes (multipart/form-data)
 
+### Model Management
+- `POST /api/models/upload` - Upload trained model to Hugging Face Hub
+
 ### Stripe
 - `POST /api/stripe/create-checkout-session` - Create checkout session
 - `POST /api/stripe/webhook` - Stripe webhook handler
@@ -145,6 +156,33 @@ npm run dev:backend   # Backend on http://localhost:5000
 ```bash
 npm run build
 ```
+
+### Hugging Face Hub Integration
+
+The resume analyzer supports using custom models from Hugging Face Hub:
+
+1. **Set up your Hugging Face token:**
+   ```env
+   HF_TOKEN=your_huggingface_token_here
+   ```
+
+2. **Use a custom model:**
+   ```env
+   HF_MODEL_ID=PavanRathodR/APi
+   ```
+
+3. **Upload a trained model to Hugging Face Hub:**
+   ```bash
+   cd backend_python
+   python upload_model.py /path/to/local/model PavanRathodR/APi
+   ```
+
+   Or use the API endpoint:
+   ```bash
+   curl -X POST http://localhost:5000/api/models/upload \
+     -H "Content-Type: application/json" \
+     -d '{"folder_path": "/path/to/local/model", "repo_id": "PavanRathodR/APi"}'
+   ```
 
 ### Environment Variables
 
