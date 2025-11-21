@@ -78,11 +78,13 @@ async def analyze_resume(
     from resume_analyzer import analyze_resume_file
     
     results = []
+    errors = []
     for resume_file in resumes:
         try:
             file_content = await resume_file.read()
             file_name = resume_file.filename or "unknown"
             
+            print(f"Processing resume: {file_name}")
             analysis = await analyze_resume_file(
                 file_content=file_content,
                 file_name=file_name,
@@ -97,13 +99,24 @@ async def analyze_resume(
             analyses_db[analysis_id] = analysis
             
             results.append(analysis)
+            print(f"Successfully analyzed: {file_name}")
             
         except Exception as e:
-            print(f"Error processing {resume_file.filename}: {str(e)}")
+            error_msg = f"Error processing {resume_file.filename}: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            print(f"Exception type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            errors.append(error_msg)
             continue
     
     if not results:
-        raise HTTPException(status_code=400, detail="Failed to process any resumes")
+        error_detail = "Failed to process any resumes. "
+        if errors:
+            error_detail += f"Errors: {'; '.join(errors[:3])}"
+        else:
+            error_detail += "Please check: 1) Resume file format (PDF/DOCX), 2) AI service configuration (HF_TOKEN or OPENAI_API_KEY)"
+        raise HTTPException(status_code=400, detail=error_detail)
     
     jobs_db[job_id]["status"] = "completed"
     return {"message": "Analysis completed", "analyses": results, "jobPost": jobs_db[job_id]}

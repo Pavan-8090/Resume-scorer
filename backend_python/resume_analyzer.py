@@ -1,5 +1,6 @@
 import io
 import os
+import json
 from typing import Dict, List
 import fitz  # PyMuPDF
 import docx2txt
@@ -9,8 +10,17 @@ import numpy as np
 import re
 from huggingface_hub import HfApi, snapshot_download
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
+
+# Try to import OpenAI
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    print("WARNING: OpenAI not installed. Install with: pip install openai")
 
 # Try to import PyResparser and spaCy
 try:
@@ -301,6 +311,37 @@ def extract_resume_skills(resume_text: str) -> List[str]:
     
     return found[:15]  # Return top 15 resume skills
 
+def is_valid_skill(skill: str) -> bool:
+    """Check if a string is a valid skill (not phone number, email, etc.)"""
+    import re
+    skill_lower = skill.lower().strip()
+    
+    # Filter out phone numbers (patterns like (501) 650-8445, 501-650-8445, etc.)
+    phone_pattern = r'[\d\s\-\(\)]{10,}'
+    if re.search(phone_pattern, skill):
+        return False
+    
+    # Filter out emails
+    email_pattern = r'[\w\.-]+@[\w\.-]+\.\w+'
+    if re.search(email_pattern, skill):
+        return False
+    
+    # Filter out URLs
+    url_pattern = r'https?://|www\.'
+    if re.search(url_pattern, skill_lower):
+        return False
+    
+    # Filter out pure numbers or very short strings
+    if len(skill_lower) < 2 or skill_lower.isdigit():
+        return False
+    
+    # Filter out common non-skill words
+    non_skills = ['com', 'www', 'http', 'https', 'email', 'phone', 'address', 'summary']
+    if skill_lower in non_skills:
+        return False
+    
+    return True
+
 def extract_matched_skills(resume_text: str, job_description: str) -> List[str]:
     """Extract skills that match between resume and job description"""
     resume_lower = resume_text.lower()
@@ -320,9 +361,85 @@ def extract_matched_skills(resume_text: str, job_description: str) -> List[str]:
     matched = []
     for skill in skills:
         if skill in job_lower and skill in resume_lower:
-            matched.append(skill.title())
+            skill_title = skill.title()
+            if is_valid_skill(skill_title):
+                matched.append(skill_title)
     
     return matched[:10]
+
+def generate_improvement_suggestions(resume_text: str, job_description: str, match_score: int, skill_comparison: Dict) -> List[str]:
+    """Generate actionable suggestions to improve resume match score to 100%"""
+    suggestions = []
+    resume_lower = resume_text.lower()
+    job_lower = job_description.lower()
+    
+    # Get missing skills
+    missing_skills = skill_comparison.get('missingSkills', [])
+    job_required_skills = skill_comparison.get('jobRequiredSkills', [])
+    resume_skills = skill_comparison.get('resumeSkills', [])
+    
+    # Calculate how many points each skill might add (rough estimate)
+    points_needed = 100 - match_score
+    skills_needed = max(1, min(len(missing_skills), points_needed // 10))
+    
+    # Suggest adding missing skills
+    if missing_skills and skills_needed > 0:
+        top_missing = missing_skills[:skills_needed]
+        for skill in top_missing:
+            suggestions.append(f"Add '{skill}' to your resume - this is a key requirement for this position")
+    
+    # Extract key requirements from job description
+    key_phrases = []
+    job_sentences = [s.strip() for s in job_lower.split('.') if len(s.strip()) > 30]
+    
+    # Look for requirement patterns
+    requirement_keywords = ['required', 'must have', 'essential', 'necessary', 'should have', 'looking for']
+    for sentence in job_sentences[:10]:
+        if any(keyword in sentence for keyword in requirement_keywords):
+            # Extract skills/technologies mentioned
+            tech_keywords = ['python', 'javascript', 'react', 'node', 'sql', 'aws', 'docker', 'kubernetes', 
+                           'experience', 'years', 'degree', 'certification', 'knowledge']
+            if any(keyword in sentence for keyword in tech_keywords):
+                key_phrases.append(sentence[:100])
+    
+    # Suggest adding experience/qualifications
+    if 'years' in job_lower or 'experience' in job_lower:
+        # Extract years requirement
+        import re
+        years_match = re.search(r'(\d+)\+?\s*years?', job_lower)
+        if years_match:
+            years_req = years_match.group(1)
+            if f'{years_req} years' not in resume_lower and f'{years_req}+ years' not in resume_lower:
+                suggestions.append(f"Highlight {years_req}+ years of relevant experience if you have it")
+    
+    # Suggest adding education if mentioned in job
+    if ('degree' in job_lower or 'bachelor' in job_lower or 'master' in job_lower) and 'degree' not in resume_lower:
+        suggestions.append("Include your educational qualifications if they match the job requirements")
+    
+    # Suggest adding certifications
+    if 'certification' in job_lower or 'certified' in job_lower:
+        if 'certification' not in resume_lower and 'certified' not in resume_lower:
+            suggestions.append("Add relevant certifications if you have them - this is mentioned in the job requirements")
+    
+    # Suggest improving skill descriptions
+    if len(resume_skills) < len(job_required_skills) * 0.7:
+        suggestions.append("Expand your skills section to better match the job requirements")
+    
+    # Suggest adding relevant projects
+    if 'project' in job_lower and 'project' not in resume_lower:
+        suggestions.append("Add relevant projects or portfolio items that demonstrate your skills")
+    
+    # If score is very low, suggest major improvements
+    if match_score < 50:
+        suggestions.append("Consider gaining experience in the required technologies before applying")
+        suggestions.append("Take online courses or certifications to bridge skill gaps")
+    
+    # Limit to top 5-7 most actionable suggestions
+    return suggestions[:7] if suggestions else [
+        "Review the job description carefully and add relevant keywords",
+        "Highlight your most relevant experience at the top of your resume",
+        "Ensure all required skills are mentioned in your resume"
+    ]
 
 def get_skill_comparison(resume_text: str, job_description: str) -> Dict:
     """Get detailed skill comparison between job and resume"""
@@ -393,27 +510,27 @@ def get_skill_comparison(resume_text: str, job_description: str) -> Dict:
     }
 
 def generate_strengths(resume_text: str, match_score: float, matched_skills: List[str], parsed_data: Dict) -> List[str]:
-    """Generate strengths"""
-    resume_lower = resume_text.lower()
+    """Generate strengths - Only based on matched skills from job description"""
     strengths = []
     
-    # Use parsed data if available
-    if parsed_data.get('skills'):
-        top_skills = parsed_data['skills'][:2]
-        strengths.extend([f"Strong {s} skills" for s in top_skills])
+    # Only use matched skills that are required in job description and present in resume
+    # Filter out any invalid skills (phone numbers, emails, etc.)
+    valid_matched_skills = [s for s in matched_skills if is_valid_skill(s)]
     
-    if matched_skills:
-        if not strengths:
-            strengths.append(f"Strong {matched_skills[0]} skills")
-        if len(matched_skills) > 1 and len(strengths) < 2:
-            strengths.append(f"Proficient in {matched_skills[1]}")
+    if valid_matched_skills:
+        if len(valid_matched_skills) >= 1:
+            strengths.append(f"Strong {valid_matched_skills[0]} skills")
+        if len(valid_matched_skills) >= 2:
+            strengths.append(f"Proficient in {valid_matched_skills[1]}")
+        if len(valid_matched_skills) >= 3:
+            strengths.append(f"Experienced with {valid_matched_skills[2]}")
     
-    if 'experience' in resume_lower or parsed_data.get('experience'):
-        strengths.append("Relevant work experience")
-    elif 'degree' in resume_lower or parsed_data.get('degree'):
-        strengths.append("Solid educational background")
+    # Add general strengths only if we have matched skills
+    if valid_matched_skills:
+        if len(valid_matched_skills) >= 2:
+            strengths.append("Multiple required skills present")
     
-    return strengths[:3] if strengths else ["Technical expertise", "Good foundation", "Potential candidate"]
+    return strengths[:3] if strengths else ["Some relevant skills identified"]
 
 def generate_weaknesses(resume_text: str, match_score: float, matched_skills: List[str]) -> List[str]:
     """Generate weaknesses"""
@@ -436,61 +553,405 @@ def generate_weaknesses(resume_text: str, match_score: float, matched_skills: Li
     
     return weaknesses[:3]
 
+async def analyze_with_openai(resume_text: str, job_description: str, candidate_name: str) -> Dict:
+    """Analyze resume using OpenAI GPT-4 API (Pure AI)"""
+    if not OPENAI_AVAILABLE:
+        raise ValueError("OpenAI library not installed. Install with: pip install openai")
+    
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise ValueError("OPENAI_API_KEY not set. Cannot use OpenAI analysis.")
+    
+    client = openai.OpenAI(api_key=openai_api_key)
+    
+    prompt = f"""You are an expert resume analyzer. Analyze the following resume against the job description and provide a comprehensive assessment.
+
+Job Description:
+{job_description[:2000]}
+
+Resume:
+{resume_text[:3000]}
+
+Provide a detailed analysis in JSON format with the following structure:
+{{
+  "matchScore": <number 0-100, representing overall match percentage>,
+  "candidateName": "{candidate_name}",
+  "strengths": ["strength1", "strength2", "strength3"],
+  "weaknesses": ["weakness1", "weakness2", "weakness3"],
+  "skillMatches": ["skill1", "skill2", "skill3", "skill4", "skill5"],
+  "allSkills": ["skill1", "skill2", "skill3", ...],
+  "skillComparison": {{
+    "jobRequiredSkills": ["skill1", "skill2", ...],
+    "resumeSkills": ["skill1", "skill2", ...],
+    "matchedSkills": ["skill1", "skill2", ...],
+    "missingSkills": ["skill1", "skill2", ...],
+    "extraSkills": ["skill1", "skill2", ...],
+    "matchPercentage": <number>,
+    "skillScores": [
+      {{"skill": "skill1", "score": 100, "status": "matched", "color": "#10B981"}},
+      ...
+    ]
+  }}
+}}
+
+Respond ONLY with valid JSON, no markdown, no code blocks, no explanations."""
+
+    try:
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a professional resume analyzer. Always respond with valid JSON only, no markdown formatting, no code blocks."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000,
+            response_format={"type": "json_object"}
+        )
+        
+        response_text = response.choices[0].message.content
+        # Clean response
+        if response_text.startswith("```"):
+            response_text = response_text.replace("```json", "").replace("```", "").strip()
+        
+        analysis = json.loads(response_text)
+        
+        # Ensure all required fields exist
+        match_score = int(analysis.get("matchScore", 0))
+        skill_comparison = analysis.get("skillComparison", {})
+        
+        # Generate improvement suggestions if score < 100%
+        improvement_suggestions = analysis.get("improvementSuggestions", [])
+        if not improvement_suggestions and match_score < 100:
+            improvement_suggestions = generate_improvement_suggestions(
+                resume_text, job_description, match_score, skill_comparison
+            )
+        
+        # Filter matched skills to remove phone numbers, emails, etc.
+        raw_skill_matches = analysis.get("skillMatches", [])
+        filtered_skill_matches = [s for s in raw_skill_matches if is_valid_skill(str(s))][:5]
+        
+        # If no valid matched skills from AI, use skillComparison matched skills
+        if not filtered_skill_matches and skill_comparison.get("matchedSkills"):
+            filtered_skill_matches = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
+        
+        result = {
+            "candidateName": analysis.get("candidateName", candidate_name),
+            "matchScore": match_score,
+            "strengths": analysis.get("strengths", [])[:3],
+            "weaknesses": analysis.get("weaknesses", [])[:3],
+            "skillMatches": filtered_skill_matches,
+            "allSkills": [s for s in analysis.get("allSkills", []) if is_valid_skill(str(s))][:10],
+            "improvementSuggestions": improvement_suggestions,
+            "skillComparison": skill_comparison
+        }
+        
+        print(f"AI Analysis Complete - Match Score: {result['matchScore']}%")
+        return result
+        
+    except Exception as e:
+        print(f"OpenAI API Error: {e}")
+        raise
+
+async def analyze_with_huggingface(resume_text: str, job_description: str, candidate_name: str) -> Dict:
+    """Analyze resume using Hugging Face Inference API (Pure AI)"""
+    hf_token = os.getenv("HF_TOKEN")
+    if not hf_token:
+        raise ValueError("HF_TOKEN not set. Cannot use Hugging Face Inference API.")
+    
+    # Use a better model for text generation - try Mistral or use a simpler approach
+    # Using a text-to-text model that's more reliable
+    model_id = os.getenv("HF_INFERENCE_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
+    api_url = f"https://api-inference.huggingface.co/models/{model_id}"
+    
+    prompt = f"""<s>[INST] You are an expert resume analyzer. Analyze the resume against the job description and provide a JSON response.
+
+Job Description:
+{job_description[:1500]}
+
+Resume:
+{resume_text[:2000]}
+
+Provide analysis in this exact JSON format:
+{{
+  "matchScore": 75,
+  "strengths": ["Strong technical skills", "Relevant experience"],
+  "weaknesses": ["Missing some required skills"],
+  "skillMatches": ["Python", "JavaScript", "React"]
+}}
+
+Only return the JSON, no other text. [/INST]"""
+
+    headers = {"Authorization": f"Bearer {hf_token}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 500,
+            "temperature": 0.3,
+            "return_full_text": False
+        }
+    }
+    
+    try:
+        print(f"Calling Hugging Face API: {model_id}")
+        response = requests.post(api_url, headers=headers, json=payload, timeout=90)
+        
+        if response.status_code == 503:
+            raise ValueError(f"Model {model_id} is loading. Please wait a moment and try again, or use a different model.")
+        
+        response.raise_for_status()
+        result_data = response.json()
+        
+        # Handle different response formats
+        if isinstance(result_data, list) and len(result_data) > 0:
+            result_text = result_data[0].get("generated_text", "")
+        elif isinstance(result_data, dict):
+            result_text = result_data.get("generated_text", "")
+        else:
+            result_text = str(result_data)
+        
+        # Try to extract JSON from response
+        json_match = re.search(r'\{[^{}]*"matchScore"[^{}]*\}', result_text, re.DOTALL)
+        if not json_match:
+            # Try broader match
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+        
+        if json_match:
+            try:
+                analysis = json.loads(json_match.group())
+            except json.JSONDecodeError:
+                # If JSON parsing fails, create a basic response
+                print(f"Warning: Could not parse JSON from response: {result_text[:200]}")
+                raise ValueError("AI response format is invalid. Please try again or configure OpenAI API.")
+        else:
+            raise ValueError(f"Could not extract JSON from AI response: {result_text[:200]}")
+        
+        # Ensure all required fields
+        match_score = analysis.get("matchScore", 0)
+        if isinstance(match_score, str):
+            match_score = int(re.search(r'\d+', match_score).group()) if re.search(r'\d+', match_score) else 0
+        
+        # Get skill comparison for missing skills
+        skill_comparison = analysis.get("skillComparison", {})
+        if not skill_comparison or not skill_comparison.get("missingSkills"):
+            # Generate skill comparison if not provided by AI
+            skill_comparison = get_skill_comparison(resume_text, job_description)
+        
+        # Filter matched skills to remove phone numbers, emails, etc.
+        raw_skill_matches = analysis.get("skillMatches", []) if isinstance(analysis.get("skillMatches"), list) else []
+        filtered_skill_matches = [s for s in raw_skill_matches if is_valid_skill(str(s))][:5]
+        
+        # If no valid matched skills from AI, use skillComparison matched skills
+        if not filtered_skill_matches and skill_comparison.get("matchedSkills"):
+            filtered_skill_matches = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
+        
+        return {
+            "candidateName": candidate_name,
+            "matchScore": int(match_score),
+            "strengths": analysis.get("strengths", [])[:3] if isinstance(analysis.get("strengths"), list) else [],
+            "weaknesses": analysis.get("weaknesses", [])[:3] if isinstance(analysis.get("weaknesses"), list) else [],
+            "skillMatches": filtered_skill_matches,
+            "allSkills": [s for s in (analysis.get("skillMatches", []) if isinstance(analysis.get("skillMatches"), list) else []) if is_valid_skill(str(s))][:10],
+            "skillComparison": skill_comparison
+        }
+    except requests.exceptions.RequestException as e:
+        print(f"Hugging Face API Request Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response status: {e.response.status_code}")
+            print(f"Response body: {e.response.text[:500]}")
+        raise ValueError(f"Hugging Face API error: {str(e)}. Please check your HF_TOKEN or try configuring OpenAI API.")
+    except Exception as e:
+        print(f"Hugging Face API Error: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+async def analyze_with_semantic_similarity(resume_text: str, job_description: str, candidate_name: str) -> Dict:
+    """Analyze using AI semantic similarity (SentenceTransformer) - Pure AI approach"""
+    print("Using PURE AI semantic similarity analysis (SentenceTransformer)...")
+    
+    # Calculate semantic similarity using AI embeddings (PURE AI)
+    similarity_score = calculate_semantic_similarity(resume_text, job_description)
+    match_score = int(similarity_score * 100)
+    
+    # Use AI embeddings to extract and compare skills (PURE AI)
+    embedder = get_embedder()
+    if embedder:
+        # Extract key phrases/skills using AI embeddings
+        # Split text into sentences and find most relevant ones
+        resume_sentences = [s.strip() for s in resume_text.split('.') if len(s.strip()) > 20][:20]
+        job_sentences = [s.strip() for s in job_description.split('.') if len(s.strip()) > 20][:20]
+        
+        if resume_sentences and job_sentences:
+            # Get embeddings for all sentences
+            resume_embeddings = embedder.encode(resume_sentences)
+            job_embeddings = embedder.encode(job_sentences)
+            
+            # Find best matches using cosine similarity
+            from sklearn.metrics.pairwise import cosine_similarity
+            similarities = cosine_similarity(resume_embeddings, job_embeddings)
+            
+            # Extract top matching skills/phrases
+            matched_indices = []
+            for i, row in enumerate(similarities):
+                max_sim_idx = row.argmax()
+                if row[max_sim_idx] > 0.3:  # Threshold for relevance
+                    matched_indices.append((i, max_sim_idx, row[max_sim_idx]))
+            
+            # Sort by similarity and extract top matches
+            matched_indices.sort(key=lambda x: x[2], reverse=True)
+            matched_skills = [resume_sentences[idx[0]][:50] for idx in matched_indices[:5]]
+            all_skills = resume_sentences[:10]
+        else:
+            matched_skills = []
+            all_skills = []
+    else:
+        # Fallback if embedder not available
+        matched_skills = []
+        all_skills = []
+    
+    # Generate AI-based insights using the similarity score
+    strengths = []
+    weaknesses = []
+    
+    if match_score >= 80:
+        strengths = ["Excellent match with job requirements", "Strong alignment with role expectations", "Highly qualified candidate"]
+        weaknesses = ["Minor areas for improvement"]
+    elif match_score >= 60:
+        strengths = ["Good match with job requirements", "Relevant experience and skills"]
+        weaknesses = ["Some skill gaps identified", "Could benefit from additional experience"]
+    else:
+        strengths = ["Some relevant experience"]
+        weaknesses = ["Significant skill gaps", "Limited alignment with job requirements", "May need additional training"]
+    
+    # Get skill comparison for suggestions
+    skill_comparison = get_skill_comparison(resume_text, job_description)
+    
+    # Generate improvement suggestions if score < 100%
+    improvement_suggestions = []
+    if match_score < 100:
+        improvement_suggestions = generate_improvement_suggestions(
+            resume_text, job_description, match_score, skill_comparison
+        )
+    
+    print(f"PURE AI Analysis Complete - Match Score: {match_score}% (from SentenceTransformer AI model)")
+    
+    # Generate improvement suggestions if score < 100%
+    improvement_suggestions = []
+    if match_score < 100:
+        improvement_suggestions = generate_improvement_suggestions(
+            resume_text, job_description, match_score, skill_comparison
+        )
+    
+    # Filter matched skills to remove phone numbers, emails, etc.
+    filtered_matched_skills = [s for s in matched_skills if is_valid_skill(str(s))][:5]
+    filtered_all_skills = [s for s in all_skills if is_valid_skill(str(s))][:10]
+    
+    # If no valid matched skills, use skillComparison matched skills
+    if not filtered_matched_skills and skill_comparison.get("matchedSkills"):
+        filtered_matched_skills = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
+    
+    return {
+        "candidateName": candidate_name,
+        "matchScore": match_score,
+        "strengths": strengths[:3],
+        "weaknesses": weaknesses[:3],
+        "skillMatches": filtered_matched_skills,
+        "allSkills": filtered_all_skills,
+        "improvementSuggestions": improvement_suggestions,
+        "skillComparison": skill_comparison
+    }
+
 async def analyze_resume_file(
     file_content: bytes,
     file_name: str,
     job_description: str
 ) -> Dict:
-    """Main analysis function using PyResparser, spaCy, and SentenceTransformer"""
+    """Main analysis function - Uses AI only (OpenAI or Hugging Face)"""
     # Extract text
     resume_text = extract_resume_text(file_content, file_name)
     
     if not resume_text or len(resume_text.strip()) < 50:
         raise ValueError("Could not extract sufficient text from resume")
     
-    # Parse resume with PyResparser
+    # Parse resume with PyResparser for candidate name
     parsed_data = parse_resume_with_pyresparser(file_content, file_name)
     candidate_name = parsed_data.get('name') or file_name.replace('.pdf', '').replace('.docx', '').replace('.doc', '') or "Unknown Candidate"
     
-    # Extract skills with spaCy
+    # Try AI analysis - OpenAI first, then Hugging Face, then semantic similarity (AI-based)
+    use_ai_only = os.getenv("USE_AI_ONLY", "true").lower() == "true"
+    
+    if use_ai_only:
+        print("Using AI-only analysis mode...")
+        
+        # Try OpenAI first
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key and openai_key != "your-openai-api-key-here":
+            try:
+                print("Attempting OpenAI analysis...")
+                return await analyze_with_openai(resume_text, job_description, candidate_name)
+            except Exception as e:
+                print(f"OpenAI analysis failed: {e}")
+                print("Falling back to Hugging Face...")
+        
+        # Try Hugging Face Inference API
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token:
+            try:
+                print("Attempting Hugging Face Inference API analysis...")
+                return await analyze_with_huggingface(resume_text, job_description, candidate_name)
+            except Exception as e:
+                print(f"Hugging Face Inference API failed: {e}")
+                print("Falling back to AI semantic similarity...")
+        
+        # Fallback: Use AI semantic similarity (still AI-based, just different approach)
+        try:
+            print("Using AI semantic similarity analysis (SentenceTransformer)...")
+            return await analyze_with_semantic_similarity(resume_text, job_description, candidate_name)
+        except Exception as e:
+            print(f"Semantic similarity analysis failed: {e}")
+            raise ValueError("All AI analysis methods failed. Please check: 1) OPENAI_API_KEY, 2) HF_TOKEN, 3) SentenceTransformer model installation.")
+    
+    # Fallback to old hybrid method if AI is disabled
+    print("Using hybrid analysis (AI + Python)...")
     resume_skills = extract_skills_with_spacy(resume_text)
-    
-    # Calculate semantic similarity
     similarity_score = calculate_semantic_similarity(resume_text, job_description)
-    
-    # Extract matched skills
     matched_skills = extract_matched_skills(resume_text, job_description)
     if not matched_skills and resume_skills:
-        # Fallback to resume skills if no matches found
         matched_skills = resume_skills[:5]
     
-    # Get detailed skill comparison
     skill_comparison = get_skill_comparison(resume_text, job_description)
-    
-    # Calculate combined match score: 60% semantic similarity + 40% skill matching
     skill_match_score = skill_comparison.get('matchPercentage', 0) / 100.0
     combined_score = (similarity_score * 0.6) + (skill_match_score * 0.4)
-    
-    # Ensure score is between 0 and 100
     match_score = int(max(0, min(100, combined_score * 100)))
     
-    # Debug logging
-    print(f"Match Score Calculation:")
-    print(f"  - Semantic similarity: {similarity_score:.2f} ({similarity_score*100:.1f}%)")
-    print(f"  - Skill match: {skill_match_score:.2f} ({skill_match_score*100:.1f}%)")
-    print(f"  - Combined score: {combined_score:.2f} ({match_score}%)")
-    print(f"  - Matched skills: {len(matched_skills)}")
-    
-    # Generate strengths and weaknesses (keeping for backward compatibility)
     strengths = generate_strengths(resume_text, similarity_score, matched_skills, parsed_data)
     weaknesses = generate_weaknesses(resume_text, similarity_score, matched_skills)
+    
+    # Generate improvement suggestions if score < 100%
+    improvement_suggestions = []
+    if match_score < 100:
+        improvement_suggestions = generate_improvement_suggestions(
+            resume_text, job_description, match_score, skill_comparison
+        )
+    
+    # Filter matched skills to remove phone numbers, emails, etc.
+    filtered_matched_skills = [s for s in matched_skills if is_valid_skill(str(s))][:5]
+    filtered_resume_skills = [s for s in (resume_skills[:10] if resume_skills else []) if is_valid_skill(str(s))]
+    
+    # If no valid matched skills, use skillComparison matched skills
+    if not filtered_matched_skills and skill_comparison.get("matchedSkills"):
+        filtered_matched_skills = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
     
     return {
         "candidateName": candidate_name,
         "matchScore": match_score,
         "strengths": strengths,
         "weaknesses": weaknesses,
-        "skillMatches": matched_skills[:5],
-        "allSkills": resume_skills[:10] if resume_skills else [],
+        "skillMatches": filtered_matched_skills,
+        "allSkills": filtered_resume_skills,
+        "improvementSuggestions": improvement_suggestions,
         "skillComparison": skill_comparison
     }

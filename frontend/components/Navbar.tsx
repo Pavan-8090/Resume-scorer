@@ -15,26 +15,26 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <nav className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex-shrink-0 flex items-center">
-            <Link href="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+            <Link href="/" className="flex items-center space-x-3 group">
+              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                 <span className="text-white font-bold text-lg">R</span>
               </div>
-              <span className="text-xl font-bold text-navy-900">ResumeScore</span>
+              <span className="text-xl font-bold text-navy-900 group-hover:text-primary-600 transition-colors">ResumeScore</span>
             </Link>
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex md:items-center md:space-x-8">
+          <div className="hidden md:flex md:items-center md:space-x-1">
             {navLinks.map((link) => (
               <a
                 key={link.name}
                 href={link.href}
-                className="text-navy-700 hover:text-navy-900 px-3 py-2 text-sm font-medium transition-colors"
+                className="text-navy-700 hover:text-primary-600 px-4 py-2 text-sm font-medium transition-colors rounded-lg hover:bg-primary-50"
               >
                 {link.name}
               </a>
@@ -42,12 +42,12 @@ export default function Navbar() {
           </div>
 
           {/* CTA Buttons */}
-          <div className="hidden md:flex md:items-center md:space-x-4">
+          <div className="hidden md:flex md:items-center md:space-x-3">
             {isAuthenticated ? (
               <>
                 <Link
                   href="/dashboard"
-                  className="text-navy-700 hover:text-navy-900 px-4 py-2 text-sm font-medium"
+                  className="text-navy-700 hover:text-primary-600 px-4 py-2 text-sm font-medium transition-colors rounded-lg hover:bg-gray-50"
                 >
                   Dashboard
                 </Link>
@@ -56,7 +56,7 @@ export default function Navbar() {
                     Cookies.remove('token');
                     router.push('/');
                   }}
-                  className="bg-navy-900 hover:bg-navy-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  className="bg-navy-900 hover:bg-navy-800 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
                 >
                   Logout
                 </button>
@@ -65,13 +65,13 @@ export default function Navbar() {
               <>
                 <Link
                   href="/login"
-                  className="text-navy-700 hover:text-navy-900 px-4 py-2 text-sm font-medium"
+                  className="text-navy-700 hover:text-primary-600 px-4 py-2 text-sm font-medium transition-colors rounded-lg hover:bg-gray-50"
                 >
                   Sign In
                 </Link>
                 <Link
                   href="/login"
-                  className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  className="bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
                 >
                   Get Started
                 </Link>
