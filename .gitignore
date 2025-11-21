@@ -12,3 +12,20 @@ uploads/
 *.docx
 .vscode/
 .idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+ENV/
+*.cpython-*.pyc
+
+# Images (keep logo.png but ignore other images)
+*.png
+!public/logo.png
+!frontend/public/logo.png

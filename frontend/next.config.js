@@ -4,6 +4,10 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000',
   },
+  images: {
+    unoptimized: false,
+    domains: [],
+  },
   webpack: (config, { isServer }) => {
     // Ignore browser extension conflicts
     if (!isServer) {

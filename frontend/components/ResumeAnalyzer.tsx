@@ -146,7 +146,7 @@ export default function ResumeAnalyzer() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Column - Upload Section */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 sticky top-8">
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 sticky top-8 transition-all duration-300 hover:shadow-2xl animate-scale-in">
               {/* Header */}
               <div className="mb-6">
                 <div className="flex items-center mb-2">
@@ -182,7 +182,7 @@ export default function ResumeAnalyzer() {
                   {/* File Upload for Job Description */}
                   <div
                     {...getJobDescRootProps()}
-                    className="mt-3 border-2 border-dashed border-gray-300 rounded-xl p-5 cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-200 group"
+                    className="mt-3 border-2 border-dashed border-gray-300 rounded-xl p-5 cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-300 group hover-lift"
                   >
                     <input {...getJobDescInputProps()} />
                     <div className="flex flex-col items-center text-center">
@@ -216,7 +216,7 @@ export default function ResumeAnalyzer() {
                   </label>
                   <div
                     {...getResumeRootProps()}
-                    className="border-2 border-dashed border-gray-300 rounded-xl p-8 cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-200 group"
+                    className="border-2 border-dashed border-gray-300 rounded-xl p-8 cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-300 group hover-lift"
                   >
                     <input {...getResumeInputProps()} />
                     <div className="flex flex-col items-center text-center">
@@ -268,22 +268,22 @@ export default function ResumeAnalyzer() {
                 <button
                   type="submit"
                   disabled={loading || !resumeFile || (!jobDescription && !jobDescriptionFile)}
-                  className="w-full bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-[1.02] flex items-center justify-center space-x-2"
+                  className="w-full bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:shadow-primary-500/30 transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2 relative overflow-hidden group"
                 >
+                  {loading && (
+                    <div className="absolute inset-0 animate-shimmer"></div>
+                  )}
                   {loading ? (
                     <>
-                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span>Analyzing with AI...</span>
+                      <div className="spinner w-5 h-5 border-2"></div>
+                      <span className="relative z-10">Analyzing with AI...</span>
                     </>
                   ) : (
                     <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
-                      <span>Analyze Resume</span>
+                      <span className="relative z-10">Analyze Resume</span>
                     </>
                   )}
                 </button>
@@ -293,8 +293,26 @@ export default function ResumeAnalyzer() {
 
           {/* Right Column - Results */}
           <div className="lg:col-span-2">
-            {analysis ? (
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+            {loading ? (
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-12 animate-scale-in">
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="relative mb-8">
+                    <div className="spinner w-16 h-16 border-4 mx-auto"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-8 h-8 bg-primary-500 rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-semibold text-navy-900 mb-2">Analyzing Resume with AI</h3>
+                  <p className="text-gray-500 text-center max-w-md">Our AI is processing your resume, extracting skills, and comparing them with the job description. This may take a moment...</p>
+                  <div className="mt-8 w-full max-w-md">
+                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full animate-shimmer" style={{ width: '60%' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : analysis ? (
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 animate-slide-in-right">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-200">
                   <div>
@@ -309,10 +327,10 @@ export default function ResumeAnalyzer() {
                 </div>
                 
                 {/* Score Card - Enhanced */}
-                <div className={`relative overflow-hidden rounded-2xl p-8 mb-8 border-2 ${
-                  analysis.matchScore >= 80 ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200' :
-                  analysis.matchScore >= 60 ? 'bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200' : 
-                  'bg-gradient-to-br from-red-50 to-rose-50 border-red-200'
+                <div className={`relative overflow-hidden rounded-2xl p-8 mb-8 border-2 transition-all duration-500 hover:scale-[1.01] ${
+                  analysis.matchScore >= 80 ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 shadow-lg shadow-green-100/50' :
+                  analysis.matchScore >= 60 ? 'bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200 shadow-lg shadow-yellow-100/50' : 
+                  'bg-gradient-to-br from-red-50 to-rose-50 border-red-200 shadow-lg shadow-red-100/50'
                 }`}>
                   <div className="absolute top-0 right-0 w-32 h-32 opacity-10">
                     <div className={`w-full h-full rounded-full ${
@@ -327,7 +345,7 @@ export default function ResumeAnalyzer() {
                         <p className="text-sm text-gray-600">AI-Powered Analysis</p>
                       </div>
                       <div className="text-right">
-                        <div className={`text-6xl font-bold ${
+                        <div className={`text-6xl font-bold transition-all duration-500 ${
                           analysis.matchScore >= 80 ? 'text-green-600' :
                           analysis.matchScore >= 60 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
@@ -337,15 +355,17 @@ export default function ResumeAnalyzer() {
                       </div>
                     </div>
                     <div className="mt-6">
-                      <div className="w-full bg-white/60 rounded-full h-4 shadow-inner">
+                      <div className="w-full bg-white/60 rounded-full h-4 shadow-inner overflow-hidden">
                         <div
-                          className={`h-4 rounded-full transition-all duration-1000 ${
-                            analysis.matchScore >= 80 ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-                            analysis.matchScore >= 60 ? 'bg-gradient-to-r from-yellow-500 to-amber-500' : 
-                            'bg-gradient-to-r from-red-500 to-rose-500'
-                          } shadow-lg`}
+                          className={`h-4 rounded-full transition-all duration-1000 ease-out ${
+                            analysis.matchScore >= 80 ? 'bg-gradient-to-r from-green-500 via-emerald-500 to-green-600' :
+                            analysis.matchScore >= 60 ? 'bg-gradient-to-r from-yellow-500 via-amber-500 to-yellow-600' : 
+                            'bg-gradient-to-r from-red-500 via-rose-500 to-red-600'
+                          } shadow-lg relative overflow-hidden`}
                           style={{ width: `${analysis.matchScore}%` }}
-                        />
+                        >
+                          <div className="absolute inset-0 animate-shimmer"></div>
+                        </div>
                       </div>
                       <div className="flex justify-between mt-2 text-xs text-gray-600">
                         <span>0%</span>
@@ -373,7 +393,8 @@ export default function ResumeAnalyzer() {
                       {analysis.allSkills.map((skill: string, idx: number) => (
                         <span
                           key={idx}
-                          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg font-medium transition-colors border border-gray-200"
+                          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg font-medium transition-all duration-300 border border-gray-200 hover:border-gray-300 hover:shadow-sm hover:scale-105 cursor-default"
+                          style={{ animationDelay: `${idx * 30}ms` }}
                         >
                           {skill}
                         </span>
@@ -385,7 +406,7 @@ export default function ResumeAnalyzer() {
                 {/* Strengths and Areas to Improve */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                   {/* Strengths - Show matched skills */}
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-100">
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-100 transition-all duration-300 hover:shadow-lg hover:scale-[1.01]">
                     <div className="flex items-center mb-4">
                       <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center mr-3">
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -425,7 +446,8 @@ export default function ResumeAnalyzer() {
                             {validSkills.map((skill: string, idx: number) => (
                               <span
                                 key={idx}
-                                className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white text-sm rounded-lg font-semibold shadow-md"
+                                className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white text-sm rounded-lg font-semibold shadow-md hover:shadow-lg hover:scale-105 transition-all duration-300 cursor-default"
+                                style={{ animationDelay: `${idx * 50}ms` }}
                               >
                                 {skill}
                               </span>
@@ -440,7 +462,7 @@ export default function ResumeAnalyzer() {
                       <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Key Strengths</p>
                       <ul className="space-y-3">
                         {analysis.strengths.map((strength: string, idx: number) => (
-                          <li key={idx} className="text-sm text-navy-700 flex items-start bg-white/60 rounded-lg p-3">
+                          <li key={idx} className="text-sm text-navy-700 flex items-start bg-white/60 rounded-lg p-3 transition-all duration-300 hover:bg-white/80 hover:shadow-md" style={{ animationDelay: `${idx * 100}ms` }}>
                             <span className="text-green-600 mr-3 font-bold text-lg">✓</span>
                             <span className="flex-1">{strength}</span>
                           </li>
@@ -450,7 +472,7 @@ export default function ResumeAnalyzer() {
                   </div>
                   
                   {/* Areas to Improve - Show required/missing skills */}
-                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-6 border-2 border-amber-100">
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-6 border-2 border-amber-100 transition-all duration-300 hover:shadow-lg hover:scale-[1.01]">
                     <div className="flex items-center mb-4">
                       <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center mr-3">
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -468,7 +490,8 @@ export default function ResumeAnalyzer() {
                           {analysis.skillComparison.missingSkills.slice(0, 10).map((skill: string, idx: number) => (
                             <span
                               key={idx}
-                              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm rounded-lg font-semibold shadow-md"
+                              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm rounded-lg font-semibold shadow-md hover:shadow-lg hover:scale-105 transition-all duration-300 cursor-default"
+                              style={{ animationDelay: `${idx * 50}ms` }}
                             >
                               {skill}
                             </span>
@@ -477,24 +500,31 @@ export default function ResumeAnalyzer() {
                       </div>
                     )}
                     
-                    {/* Weaknesses List */}
+                    {/* Weaknesses List - ONLY show missing required skills/tools from job description */}
                     <div>
                       <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Improvement Areas</p>
-                      <ul className="space-y-3">
-                        {analysis.weaknesses.map((weakness: string, idx: number) => (
-                          <li key={idx} className="text-sm text-navy-700 flex items-start bg-white/60 rounded-lg p-3">
-                            <span className="text-amber-600 mr-3 font-bold text-lg">⚠</span>
-                            <span className="flex-1">{weakness}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {analysis.weaknesses && analysis.weaknesses.length > 0 ? (
+                        <ul className="space-y-3">
+                          {analysis.weaknesses.map((weakness: string, idx: number) => (
+                            <li key={idx} className="text-sm text-navy-700 flex items-start bg-white/60 rounded-lg p-3 transition-all duration-300 hover:bg-white/80 hover:shadow-md animate-fade-in" style={{ animationDelay: `${idx * 100}ms` }}>
+                              <span className="text-amber-600 mr-3 font-bold text-lg">⚠</span>
+                              <span className="flex-1">{weakness}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-sm text-navy-700 bg-white/60 rounded-lg p-3">
+                          <span className="text-green-600 mr-2">✓</span>
+                          All required skills and tools from job description are present in your resume!
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Improvement Suggestions - Show only if score < 100% */}
                 {analysis.matchScore < 100 && analysis.improvementSuggestions && analysis.improvementSuggestions.length > 0 && (
-                  <div className="mt-8 p-8 bg-gradient-to-br from-primary-50 via-blue-50 to-indigo-50 rounded-2xl border-2 border-primary-200 shadow-lg relative overflow-hidden">
+                  <div className="mt-8 p-8 bg-gradient-to-br from-primary-50 via-blue-50 to-indigo-50 rounded-2xl border-2 border-primary-200 shadow-lg relative overflow-hidden animate-fade-in hover:shadow-xl transition-all duration-300">
                     {/* Decorative background */}
                     <div className="absolute top-0 right-0 w-40 h-40 bg-primary-200 rounded-full blur-3xl opacity-20 -mr-20 -mt-20"></div>
                     <div className="absolute bottom-0 left-0 w-32 h-32 bg-blue-200 rounded-full blur-3xl opacity-20 -ml-16 -mb-16"></div>
@@ -514,8 +544,8 @@ export default function ResumeAnalyzer() {
                       
                       <div className="space-y-3 mb-6">
                         {analysis.improvementSuggestions.map((suggestion: string, idx: number) => (
-                          <div key={idx} className="flex items-start p-4 bg-white rounded-xl border-2 border-primary-100 hover:border-primary-300 hover:shadow-md transition-all group">
-                            <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center mr-4 mt-0.5 shadow-md group-hover:scale-110 transition-transform">
+                          <div key={idx} className="flex items-start p-4 bg-white rounded-xl border-2 border-primary-100 hover:border-primary-300 hover:shadow-md hover:scale-[1.01] transition-all duration-300 group animate-fade-in" style={{ animationDelay: `${idx * 100}ms` }}>
+                            <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center mr-4 mt-0.5 shadow-md group-hover:scale-110 group-hover:shadow-lg transition-all duration-300">
                               <span className="text-white font-bold text-sm">{idx + 1}</span>
                             </div>
                             <p className="text-sm text-navy-700 flex-1 leading-relaxed pt-1">{suggestion}</p>
@@ -554,9 +584,9 @@ export default function ResumeAnalyzer() {
                 )}
               </div>
             ) : (
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-16 text-center">
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-16 text-center animate-fade-in">
                 <div className="max-w-md mx-auto">
-                  <div className="w-24 h-24 bg-gradient-to-br from-primary-100 to-primary-200 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                  <div className="w-24 h-24 bg-gradient-to-br from-primary-100 to-primary-200 rounded-3xl flex items-center justify-center mx-auto mb-6 animate-float">
                     <svg className="w-12 h-12 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>

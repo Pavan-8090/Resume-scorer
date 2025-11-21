@@ -268,18 +268,28 @@ def calculate_keyword_match(resume_text: str, job_description: str) -> float:
     return min(1.0, max(0.0, final_score))
 
 def extract_job_required_skills(job_description: str) -> List[str]:
-    """Extract skills mentioned in job description"""
+    """Extract skills mentioned in job description - comprehensive list"""
     job_lower = job_description.lower()
     
     skills = [
-        'javascript', 'python', 'java', 'react', 'node.js', 'sql', 'html', 'css',
-        'typescript', 'angular', 'vue', 'express', 'django', 'flask', 'spring',
-        'leadership', 'communication', 'project management', 'teamwork', 'problem solving',
-        'marketing', 'sales', 'analytics', 'design', 'writing', 'analysis', 'agile',
-        'devops', 'aws', 'docker', 'kubernetes', 'git', 'ci/cd', 'machine learning',
-        'data science', 'ai', 'tensorflow', 'pytorch', 'postgresql', 'mongodb', 'redis',
-        'elasticsearch', 'kafka', 'rabbitmq', 'nginx', 'apache', 'linux', 'terraform',
-        'ansible', 'jenkins', 'github actions', 'graphql', 'rest api', 'microservices'
+        # Programming Languages
+        'javascript', 'python', 'java', 'typescript', 'c++', 'c#', 'php', 'ruby', 'go', 'rust', 'swift', 'kotlin',
+        # Web Technologies
+        'react', 'node.js', 'angular', 'vue', 'next.js', 'nuxt', 'express', 'django', 'flask', 'spring', 'laravel',
+        'html', 'css', 'sass', 'scss', 'bootstrap', 'tailwind', 'jquery',
+        # Databases
+        'sql', 'mysql', 'postgresql', 'mongodb', 'redis', 'oracle', 'sqlite', 'dynamodb', 'cassandra', 'elasticsearch',
+        # Cloud & DevOps
+        'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'ansible', 'jenkins', 'ci/cd', 'github actions',
+        'git', 'gitlab', 'bitbucket', 'nginx', 'apache', 'linux', 'unix',
+        # Data & AI
+        'machine learning', 'data science', 'ai', 'artificial intelligence', 'tensorflow', 'pytorch', 'pandas', 'numpy',
+        'tableau', 'power bi', 'spark', 'hadoop', 'kafka', 'rabbitmq',
+        # Other Tools
+        'graphql', 'rest api', 'microservices', 'agile', 'scrum', 'jira', 'confluence',
+        # Soft Skills
+        'leadership', 'communication', 'project management', 'teamwork', 'problem solving', 'analytics',
+        'marketing', 'sales', 'design', 'writing', 'analysis'
     ]
     
     required = []
@@ -287,7 +297,18 @@ def extract_job_required_skills(job_description: str) -> List[str]:
         if skill in job_lower:
             required.append(skill.title())
     
-    return required[:15]  # Return top 15 required skills
+    # Also extract any capitalized technical terms (likely tools/technologies)
+    import re
+    # Find capitalized words that might be tools/technologies
+    tech_patterns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', job_description)
+    for pattern in tech_patterns:
+        pattern_lower = pattern.lower()
+        # If it's a known skill or looks like a technology name
+        if pattern_lower in skills or (len(pattern) >= 3 and pattern not in required and pattern not in ['The', 'This', 'That', 'With', 'From']):
+            if pattern not in required:
+                required.append(pattern)
+    
+    return required[:20]  # Return top 20 required skills
 
 def extract_resume_skills(resume_text: str) -> List[str]:
     """Extract skills mentioned in resume"""
@@ -367,7 +388,7 @@ def extract_matched_skills(resume_text: str, job_description: str) -> List[str]:
     
     return matched[:10]
 
-def generate_improvement_suggestions(resume_text: str, job_description: str, match_score: int, skill_comparison: Dict) -> List[str]:
+def generate_improvement_suggestions(resume_text: str, job_description: str, match_score: int, skill_comparison: Dict, section_validation: Dict = None) -> List[str]:
     """Generate actionable suggestions to improve resume match score to 100%"""
     suggestions = []
     resume_lower = resume_text.lower()
@@ -377,6 +398,47 @@ def generate_improvement_suggestions(resume_text: str, job_description: str, mat
     missing_skills = skill_comparison.get('missingSkills', [])
     job_required_skills = skill_comparison.get('jobRequiredSkills', [])
     resume_skills = skill_comparison.get('resumeSkills', [])
+    
+    # Add section validation suggestions if provided
+    if section_validation:
+        # Contact Info suggestions
+        if section_validation["contactInfo"]["score"] < 100:
+            if not section_validation["contactInfo"]["hasName"]:
+                suggestions.append("Add your full name to the resume header")
+            if not section_validation["contactInfo"]["hasPhone"]:
+                suggestions.append("Include your phone number in the contact information section")
+            if not section_validation["contactInfo"]["hasEmail"]:
+                suggestions.append("Add your email address to the contact information section")
+        
+        # Summary suggestions
+        if section_validation["summary"]["score"] < 100:
+            if not section_validation["summary"]["hasSummary"]:
+                suggestions.append("Add a professional summary section (2-3 lines describing who you are and what you can do)")
+            elif not section_validation["summary"]["isProperLength"]:
+                suggestions.append("Optimize your summary to be 2-3 lines (approximately 50-200 words)")
+        
+        # Work Experience suggestions
+        if section_validation["workExperience"]["score"] < 100:
+            if not section_validation["workExperience"]["hasExperience"]:
+                suggestions.append("Add a work experience section with your past jobs")
+            if not section_validation["workExperience"]["hasAchievements"]:
+                suggestions.append("Include quantifiable achievements in your work experience (use numbers, percentages, metrics)")
+            if not section_validation["workExperience"]["matchesJob"]:
+                suggestions.append("Tailor your work experience descriptions to match keywords from the job description")
+        
+        # Skills suggestions
+        if section_validation["skills"]["score"] < 100:
+            if not section_validation["skills"]["hasSkills"]:
+                suggestions.append("Add a skills section listing your technical and professional skills")
+            if not section_validation["skills"]["matchesJobKeywords"]:
+                suggestions.append("Update your skills section to include keywords from the job description")
+        
+        # Education suggestions
+        if section_validation["education"]["score"] < 70:
+            if not section_validation["education"]["hasEducation"]:
+                suggestions.append("Include your education/degree information")
+            if not section_validation["education"]["hasCertificates"]:
+                suggestions.append("Add relevant certifications if you have them")
     
     # Calculate how many points each skill might add (rough estimate)
     points_needed = 100 - match_score
@@ -441,6 +503,557 @@ def generate_improvement_suggestions(resume_text: str, job_description: str, mat
         "Ensure all required skills are mentioned in your resume"
     ]
 
+def validate_resume_sections(resume_text: str, job_description: str, parsed_data: Dict, skill_comparison: Dict) -> Dict:
+    """Validate all required resume sections according to professional standards"""
+    import re
+    
+    resume_lower = resume_text.lower()
+    job_lower = job_description.lower()
+    
+    validation_results = {
+        "contactInfo": {"hasName": False, "hasPhone": False, "hasEmail": False, "score": 0},
+        "summary": {"hasSummary": False, "isProperLength": False, "score": 0},
+        "workExperience": {"hasExperience": False, "hasAchievements": False, "matchesJob": False, "score": 0},
+        "skills": {"hasSkills": False, "matchesJobKeywords": False, "score": 0},
+        "education": {"hasEducation": False, "hasCertificates": False, "score": 0},
+        "overallScore": 0
+    }
+    
+    # 1. Contact Info Validation
+    # Check for name
+    name = parsed_data.get('name', '')
+    if name and len(name.strip()) > 0:
+        validation_results["contactInfo"]["hasName"] = True
+    
+    # Check for phone (patterns: (123) 456-7890, 123-456-7890, 123.456.7890, etc.)
+    phone_patterns = [
+        r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',  # US format
+        r'\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}',  # International
+        r'\d{10,}',  # 10+ digits
+    ]
+    for pattern in phone_patterns:
+        if re.search(pattern, resume_text):
+            validation_results["contactInfo"]["hasPhone"] = True
+            break
+    
+    # Check for email
+    email_pattern = r'[\w\.-]+@[\w\.-]+\.\w+'
+    if re.search(email_pattern, resume_text):
+        validation_results["contactInfo"]["hasEmail"] = True
+    
+    # Contact info score (all 3 required = 100%)
+    contact_score = 0
+    if validation_results["contactInfo"]["hasName"]:
+        contact_score += 33.33
+    if validation_results["contactInfo"]["hasPhone"]:
+        contact_score += 33.33
+    if validation_results["contactInfo"]["hasEmail"]:
+        contact_score += 33.34
+    validation_results["contactInfo"]["score"] = int(contact_score)
+    
+    # 2. Summary Validation (2-3 lines, about 50-200 words)
+    summary_keywords = ['summary', 'profile', 'objective', 'about', 'overview']
+    summary_section = None
+    
+    # Try to find summary section
+    lines = resume_text.split('\n')
+    in_summary = False
+    summary_lines = []
+    
+    for i, line in enumerate(lines[:20]):  # Check first 20 lines
+        line_lower = line.lower().strip()
+        if any(keyword in line_lower for keyword in summary_keywords):
+            in_summary = True
+            continue
+        if in_summary:
+            if line.strip() and not any(keyword in line_lower for keyword in ['experience', 'education', 'skills', 'work']):
+                summary_lines.append(line.strip())
+            else:
+                break
+    
+    if summary_lines:
+        summary_text = ' '.join(summary_lines)
+        word_count = len(summary_text.split())
+        validation_results["summary"]["hasSummary"] = True
+        # Check if it's 2-3 lines (approximately 50-200 words)
+        if 50 <= word_count <= 200:
+            validation_results["summary"]["isProperLength"] = True
+            validation_results["summary"]["score"] = 100
+        elif word_count > 0:
+            validation_results["summary"]["score"] = 50  # Partial credit
+    else:
+        validation_results["summary"]["score"] = 0
+    
+    # 3. Work Experience Validation
+    experience_keywords = ['experience', 'employment', 'work history', 'professional experience', 'career']
+    has_experience = any(keyword in resume_lower for keyword in experience_keywords)
+    validation_results["workExperience"]["hasExperience"] = has_experience
+    
+    # Check for achievements with numbers (metrics, percentages, etc.)
+    achievement_patterns = [
+        r'\d+%',  # Percentages
+        r'\$\d+[KMB]?',  # Money amounts
+        r'\d+\+',  # Numbers with +
+        r'increased|decreased|improved|reduced|achieved|delivered|managed',
+        r'\d+\s*(years?|months?)',  # Time periods
+    ]
+    has_achievements = False
+    for pattern in achievement_patterns:
+        if re.search(pattern, resume_lower, re.IGNORECASE):
+            has_achievements = True
+            break
+    validation_results["workExperience"]["hasAchievements"] = has_achievements
+    
+    # Check if experience matches job description
+    job_keywords = set(re.findall(r'\b\w{4,}\b', job_lower))  # Words 4+ chars
+    resume_keywords = set(re.findall(r'\b\w{4,}\b', resume_lower))
+    common_keywords = job_keywords.intersection(resume_keywords)
+    match_ratio = len(common_keywords) / max(len(job_keywords), 1) if job_keywords else 0
+    validation_results["workExperience"]["matchesJob"] = match_ratio >= 0.3  # 30% keyword overlap
+    
+    # Work experience score
+    exp_score = 0
+    if has_experience:
+        exp_score += 40
+    if has_achievements:
+        exp_score += 30
+    if validation_results["workExperience"]["matchesJob"]:
+        exp_score += 30
+    validation_results["workExperience"]["score"] = int(exp_score)
+    
+    # 4. Skills Validation
+    matched_skills = skill_comparison.get("matchedSkills", [])
+    job_required_skills = skill_comparison.get("jobRequiredSkills", [])
+    
+    validation_results["skills"]["hasSkills"] = len(skill_comparison.get("resumeSkills", [])) > 0
+    validation_results["skills"]["matchesJobKeywords"] = len(matched_skills) > 0 and len(job_required_skills) > 0
+    
+    # Skills score based on match ratio
+    if len(job_required_skills) > 0:
+        skill_match_ratio = len(matched_skills) / len(job_required_skills)
+        validation_results["skills"]["score"] = int(min(100, skill_match_ratio * 100))
+    else:
+        validation_results["skills"]["score"] = 50 if validation_results["skills"]["hasSkills"] else 0
+    
+    # 5. Education/Certificates Validation
+    education_keywords = ['education', 'degree', 'bachelor', 'master', 'phd', 'university', 'college', 'diploma']
+    cert_keywords = ['certification', 'certified', 'certificate', 'cert', 'license', 'licensed']
+    
+    has_education = any(keyword in resume_lower for keyword in education_keywords)
+    has_certificates = any(keyword in resume_lower for keyword in cert_keywords)
+    
+    validation_results["education"]["hasEducation"] = has_education
+    validation_results["education"]["hasCertificates"] = has_certificates
+    
+    # Education score
+    edu_score = 0
+    if has_education:
+        edu_score += 70
+    if has_certificates:
+        edu_score += 30
+    validation_results["education"]["score"] = int(edu_score)
+    
+    # Overall Score (weighted average)
+    overall = (
+        validation_results["contactInfo"]["score"] * 0.15 +      # 15% - Contact info
+        validation_results["summary"]["score"] * 0.15 +          # 15% - Summary
+        validation_results["workExperience"]["score"] * 0.30 +    # 30% - Work experience (most important)
+        validation_results["skills"]["score"] * 0.25 +            # 25% - Skills
+        validation_results["education"]["score"] * 0.15            # 15% - Education
+    )
+    validation_results["overallScore"] = int(overall)
+    
+    return validation_results
+
+def check_ats_compatibility(resume_text: str, file_name: str) -> Dict:
+    """Check ATS (Applicant Tracking System) compatibility"""
+    import re
+    
+    ats_results = {
+        "fileFormat": {"isATS": False, "format": "", "score": 0},
+        "formatting": {"hasTables": False, "hasImages": False, "hasSpecialChars": False, "score": 0},
+        "structure": {"hasHeaders": False, "isReadable": False, "score": 0},
+        "overallScore": 0
+    }
+    
+    # 1. File Format Check
+    file_ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
+    if file_ext == 'pdf':
+        ats_results["fileFormat"]["format"] = "PDF"
+        ats_results["fileFormat"]["isATS"] = True
+        ats_results["fileFormat"]["score"] = 100
+    elif file_ext in ['docx', 'doc']:
+        ats_results["fileFormat"]["format"] = "DOCX/DOC"
+        ats_results["fileFormat"]["isATS"] = True
+        ats_results["fileFormat"]["score"] = 90  # PDF is slightly better
+    else:
+        ats_results["fileFormat"]["format"] = file_ext.upper() if file_ext else "Unknown"
+        ats_results["fileFormat"]["score"] = 0
+    
+    # 2. Formatting Issues
+    # Check for tables (common ATS issue)
+    table_indicators = ['|', '\t\t', '  +  ']  # Pipe, tabs, multiple spaces
+    has_tables = any(indicator in resume_text for indicator in table_indicators)
+    ats_results["formatting"]["hasTables"] = has_tables
+    
+    # Check for images (can't detect in text, but check for image references)
+    image_keywords = ['[image]', '[img]', 'figure', 'photo']
+    has_images = any(keyword in resume_text.lower() for keyword in image_keywords)
+    ats_results["formatting"]["hasImages"] = has_images
+    
+    # Check for problematic special characters
+    problematic_chars = ['•', '→', '←', '↑', '↓', '★', '☆', '◆', '■']
+    has_special_chars = any(char in resume_text for char in problematic_chars)
+    ats_results["formatting"]["hasSpecialChars"] = has_special_chars
+    
+    # Formatting score
+    formatting_score = 100
+    if has_tables:
+        formatting_score -= 20
+    if has_images:
+        formatting_score -= 15
+    if has_special_chars:
+        formatting_score -= 10
+    ats_results["formatting"]["score"] = max(0, formatting_score)
+    
+    # 3. Structure Check
+    # Check for proper section headers
+    section_headers = ['experience', 'education', 'skills', 'summary', 'objective', 'contact', 'work', 'employment']
+    resume_lower = resume_text.lower()
+    has_headers = any(header in resume_lower for header in section_headers)
+    ats_results["structure"]["hasHeaders"] = has_headers
+    
+    # Check readability (proper line breaks, not all one block)
+    lines = resume_text.split('\n')
+    non_empty_lines = [line.strip() for line in lines if line.strip()]
+    avg_line_length = sum(len(line) for line in non_empty_lines) / max(len(non_empty_lines), 1)
+    is_readable = 20 <= avg_line_length <= 100  # Reasonable line length
+    ats_results["structure"]["isReadable"] = is_readable
+    
+    # Structure score
+    structure_score = 0
+    if has_headers:
+        structure_score += 60
+    if is_readable:
+        structure_score += 40
+    ats_results["structure"]["score"] = structure_score
+    
+    # Overall ATS Score
+    overall = (
+        ats_results["fileFormat"]["score"] * 0.30 +
+        ats_results["formatting"]["score"] * 0.40 +
+        ats_results["structure"]["score"] * 0.30
+    )
+    ats_results["overallScore"] = int(overall)
+    
+    return ats_results
+
+def analyze_action_verbs(resume_text: str) -> Dict:
+    """Analyze action verbs usage in resume"""
+    import re
+    
+    # Strong action verbs (good)
+    strong_verbs = [
+        'achieved', 'accomplished', 'implemented', 'developed', 'created', 'designed',
+        'managed', 'led', 'improved', 'increased', 'reduced', 'optimized', 'enhanced',
+        'delivered', 'executed', 'established', 'launched', 'initiated', 'spearheaded',
+        'transformed', 'streamlined', 'generated', 'produced', 'built', 'constructed',
+        'analyzed', 'evaluated', 'researched', 'identified', 'resolved', 'solved',
+        'collaborated', 'coordinated', 'facilitated', 'negotiated', 'presented', 'trained'
+    ]
+    
+    # Weak verbs (should be replaced)
+    weak_verbs = [
+        'did', 'worked', 'helped', 'assisted', 'made', 'got', 'went', 'came',
+        'tried', 'attempted', 'was', 'were', 'had', 'has', 'have', 'do', 'does'
+    ]
+    
+    resume_lower = resume_text.lower()
+    
+    # Find all verbs (simple pattern matching)
+    strong_found = []
+    weak_found = []
+    
+    for verb in strong_verbs:
+        pattern = r'\b' + re.escape(verb) + r'(ed|ing|s)?\b'
+        matches = re.findall(pattern, resume_lower)
+        if matches:
+            strong_found.append(verb)
+    
+    for verb in weak_verbs:
+        pattern = r'\b' + re.escape(verb) + r'(ed|ing|s)?\b'
+        matches = re.findall(pattern, resume_lower)
+        if matches:
+            weak_found.append(verb)
+    
+    # Calculate score
+    total_verbs = len(strong_found) + len(weak_found)
+    if total_verbs == 0:
+        verb_score = 50  # Neutral if no verbs detected
+    else:
+        strong_ratio = len(strong_found) / total_verbs
+        verb_score = int(strong_ratio * 100)
+    
+    # Suggestions
+    suggestions = []
+    if len(weak_found) > 0:
+        suggestions.append(f"Replace weak verbs like '{weak_found[0]}' with stronger action verbs")
+    if len(strong_found) < 5:
+        suggestions.append("Add more strong action verbs to make your achievements stand out")
+    
+    return {
+        "strongVerbs": strong_found[:10],
+        "weakVerbs": weak_found[:10],
+        "strongCount": len(strong_found),
+        "weakCount": len(weak_found),
+        "score": verb_score,
+        "suggestions": suggestions
+    }
+
+def analyze_keyword_density(resume_text: str, job_description: str) -> Dict:
+    """Analyze keyword density and placement"""
+    import re
+    
+    # Extract keywords from job description (important terms)
+    job_lower = job_description.lower()
+    job_words = re.findall(r'\b\w{4,}\b', job_lower)  # Words 4+ characters
+    job_keyword_freq = {}
+    for word in job_words:
+        if word not in ['with', 'that', 'this', 'from', 'have', 'will', 'would', 'should']:
+            job_keyword_freq[word] = job_keyword_freq.get(word, 0) + 1
+    
+    # Get top keywords from job description
+    top_job_keywords = sorted(job_keyword_freq.items(), key=lambda x: x[1], reverse=True)[:20]
+    top_keywords = [word for word, freq in top_job_keywords]
+    
+    # Check keyword presence in resume
+    resume_lower = resume_text.lower()
+    resume_words = set(re.findall(r'\b\w{4,}\b', resume_lower))
+    
+    found_keywords = []
+    missing_keywords = []
+    
+    for keyword in top_keywords:
+        if keyword in resume_words:
+            found_keywords.append(keyword)
+        else:
+            missing_keywords.append(keyword)
+    
+    # Check keyword placement (top half of resume is better)
+    resume_lines = resume_text.split('\n')
+    top_half = ' '.join(resume_lines[:len(resume_lines)//2]).lower()
+    keywords_in_top = sum(1 for kw in found_keywords if kw in top_half)
+    
+    # Calculate scores
+    keyword_match_score = (len(found_keywords) / len(top_keywords) * 100) if top_keywords else 0
+    placement_score = (keywords_in_top / len(found_keywords) * 100) if found_keywords else 0
+    
+    overall_score = int((keyword_match_score * 0.7) + (placement_score * 0.3))
+    
+    return {
+        "foundKeywords": found_keywords[:15],
+        "missingKeywords": missing_keywords[:15],
+        "keywordsInTopHalf": keywords_in_top,
+        "matchScore": int(keyword_match_score),
+        "placementScore": int(placement_score),
+        "overallScore": overall_score,
+        "suggestions": [
+            f"Add missing keywords: {', '.join(missing_keywords[:5])}" if missing_keywords else "Good keyword coverage",
+            "Move important keywords to the top half of your resume" if placement_score < 50 else "Good keyword placement"
+        ]
+    }
+
+def extract_quantifiable_achievements(resume_text: str) -> Dict:
+    """Extract and analyze quantifiable achievements"""
+    import re
+    
+    # Patterns for quantifiable achievements
+    patterns = {
+        "percentages": r'\d+%',
+        "money": r'\$\d+[KMB]?|\d+\s*(million|billion|thousand|k|m|b)',
+        "numbers": r'\d+[+\-]?\s*(users|customers|projects|employees|revenue|sales|deals|contracts)',
+        "timeframes": r'\d+\s*(years?|months?|weeks?|days?)',
+        "metrics": r'(increased|decreased|improved|reduced|achieved|delivered|managed|grew|saved)\s+\w+\s+by\s+\d+',
+        "scales": r'\d+\s*(x|times|fold)'
+    }
+    
+    achievements = {
+        "percentages": [],
+        "money": [],
+        "numbers": [],
+        "timeframes": [],
+        "metrics": [],
+        "scales": []
+    }
+    
+    for category, pattern in patterns.items():
+        matches = re.findall(pattern, resume_text, re.IGNORECASE)
+        achievements[category] = matches[:5]  # Limit to 5 per category
+    
+    # Count total achievements
+    total_achievements = sum(len(v) for v in achievements.values())
+    
+    # Calculate score
+    if total_achievements >= 5:
+        achievement_score = 100
+    elif total_achievements >= 3:
+        achievement_score = 75
+    elif total_achievements >= 1:
+        achievement_score = 50
+    else:
+        achievement_score = 0
+    
+    suggestions = []
+    if total_achievements == 0:
+        suggestions.append("Add quantifiable achievements with numbers, percentages, or metrics")
+    elif total_achievements < 3:
+        suggestions.append(f"Add more quantifiable achievements (currently {total_achievements}, aim for 5+)")
+    
+    return {
+        "achievements": achievements,
+        "totalCount": total_achievements,
+        "score": achievement_score,
+        "suggestions": suggestions
+    }
+
+def analyze_resume_length_structure(resume_text: str) -> Dict:
+    """Analyze resume length and structure optimization"""
+    import re
+    
+    # Calculate length metrics
+    word_count = len(resume_text.split())
+    char_count = len(resume_text)
+    lines = resume_text.split('\n')
+    non_empty_lines = [line for line in lines if line.strip()]
+    
+    # Estimate pages (assuming ~500 words per page)
+    estimated_pages = word_count / 500
+    
+    # Length score
+    if 400 <= word_count <= 1000:  # 1-2 pages ideal
+        length_score = 100
+    elif 200 <= word_count < 400:  # Too short
+        length_score = 60
+    elif 1000 < word_count <= 1500:  # Slightly long
+        length_score = 80
+    else:  # Very short or very long
+        length_score = 40
+    
+    # Structure analysis
+    # Check for bullet points
+    bullet_patterns = [r'^[\-\*•]\s', r'^\d+\.\s', r'^[a-z]\)\s']
+    has_bullets = any(re.search(pattern, resume_text, re.MULTILINE) for pattern in bullet_patterns)
+    
+    # Check section organization
+    section_keywords = ['experience', 'education', 'skills', 'summary', 'objective', 'contact', 'work']
+    sections_found = sum(1 for keyword in section_keywords if keyword in resume_text.lower())
+    
+    # Structure score
+    structure_score = 0
+    if has_bullets:
+        structure_score += 50
+    if sections_found >= 4:
+        structure_score += 50
+    elif sections_found >= 2:
+        structure_score += 30
+    
+    suggestions = []
+    if word_count < 400:
+        suggestions.append(f"Resume is too short ({word_count} words). Aim for 400-1000 words (1-2 pages)")
+    elif word_count > 1500:
+        suggestions.append(f"Resume is too long ({word_count} words). Aim for 400-1000 words (1-2 pages)")
+    
+    if not has_bullets:
+        suggestions.append("Use bullet points to make achievements easier to scan")
+    
+    if sections_found < 4:
+        suggestions.append("Ensure you have clear sections: Experience, Education, Skills, Summary")
+    
+    return {
+        "wordCount": word_count,
+        "charCount": char_count,
+        "estimatedPages": round(estimated_pages, 1),
+        "hasBullets": has_bullets,
+        "sectionsFound": sections_found,
+        "lengthScore": length_score,
+        "structureScore": structure_score,
+        "overallScore": int((length_score * 0.6) + (structure_score * 0.4)),
+        "suggestions": suggestions
+    }
+
+def calculate_modern_match_score(resume_text: str, job_description: str, skill_comparison: Dict, parsed_data: Dict = None) -> int:
+    """Modern, comprehensive match score calculation with resume section validation"""
+    if parsed_data is None:
+        parsed_data = {}
+    
+    # Validate all resume sections
+    section_validation = validate_resume_sections(resume_text, job_description, parsed_data, skill_comparison)
+    
+    # Get skill data
+    matched_skills = skill_comparison.get("matchedSkills", [])
+    missing_skills = skill_comparison.get("missingSkills", [])
+    job_required_skills = skill_comparison.get("jobRequiredSkills", [])
+    resume_skills = skill_comparison.get("resumeSkills", [])
+    
+    # Factor 1: Resume Section Completeness (30% weight) - Professional structure
+    section_score = section_validation["overallScore"]
+    
+    # Factor 2: Skill Match Score (35% weight) - Most important for job match
+    if len(job_required_skills) > 0:
+        skill_match_ratio = len(matched_skills) / len(job_required_skills)
+        skill_score = min(100, skill_match_ratio * 100)
+    else:
+        skill_score = 50  # Neutral if no specific skills mentioned
+    
+    # Factor 3: Semantic Similarity (25% weight) - Overall alignment
+    semantic_score_raw = calculate_semantic_similarity(resume_text, job_description)
+    semantic_score = min(100, max(0, semantic_score_raw * 100))
+    
+    # Factor 4: Completeness Score (10% weight) - Missing skills penalty
+    if len(job_required_skills) > 0:
+        missing_ratio = len(missing_skills) / len(job_required_skills)
+        completeness_score = max(0, 100 - (missing_ratio * 100))
+    else:
+        completeness_score = 100
+    
+    # Weighted combination
+    final_score = (
+        section_score * 0.30 +        # 30% - Resume structure completeness
+        skill_score * 0.35 +           # 35% - Skill matching (most important)
+        semantic_score * 0.25 +         # 25% - Semantic similarity
+        completeness_score * 0.10      # 10% - Completeness
+    )
+    
+    # Normalize to 0-100 range
+    match_score = int(max(0, min(100, final_score)))
+    
+    # CRITICAL: If all sections are perfect (100%) AND all skills match, give 100%
+    all_sections_perfect = (
+        section_validation["contactInfo"]["score"] == 100 and
+        section_validation["summary"]["score"] == 100 and
+        section_validation["workExperience"]["score"] == 100 and
+        section_validation["skills"]["score"] == 100 and
+        section_validation["education"]["score"] >= 70 and  # Education or certs
+        len(missing_skills) == 0  # All required skills present
+    )
+    
+    if all_sections_perfect:
+        match_score = 100
+        print("PERFECT RESUME: All sections complete and all skills match - Score: 100%")
+    
+    # Boost score if high skill match but low semantic (indicates good match)
+    if skill_score >= 70 and semantic_score < 60:
+        match_score = min(100, match_score + 5)
+    
+    # Reduce score if many missing critical skills
+    if len(missing_skills) > len(matched_skills) and len(missing_skills) >= 3:
+        match_score = max(0, match_score - 10)
+    
+    # Store section validation in skill_comparison for later use
+    skill_comparison["sectionValidation"] = section_validation
+    
+    return match_score
+
 def get_skill_comparison(resume_text: str, job_description: str) -> Dict:
     """Get detailed skill comparison between job and resume"""
     job_skills = extract_job_required_skills(job_description)
@@ -450,8 +1063,27 @@ def get_skill_comparison(resume_text: str, job_description: str) -> Dict:
     # Calculate match percentage
     match_percentage = (len(matched_skills) / len(job_skills) * 100) if job_skills else 0
     
-    # Get missing skills (required but not in resume)
-    missing_skills = [s for s in job_skills if s not in matched_skills]
+    # Get missing skills (required in job description but NOT in resume)
+    # Compare job_skills with matched_skills to find what's missing
+    missing_skills = []
+    for job_skill in job_skills:
+        # Check if this job skill is NOT in matched_skills
+        if job_skill not in matched_skills:
+            # Also check case-insensitive match
+            job_skill_lower = job_skill.lower()
+            is_matched = any(ms.lower() == job_skill_lower for ms in matched_skills)
+            if not is_matched:
+                missing_skills.append(job_skill)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    missing_skills_unique = []
+    for skill in missing_skills:
+        skill_lower = skill.lower()
+        if skill_lower not in seen:
+            seen.add(skill_lower)
+            missing_skills_unique.append(skill)
+    missing_skills = missing_skills_unique
     
     # Get extra skills (in resume but not required)
     extra_skills = [s for s in resume_skills if s not in matched_skills]
@@ -532,28 +1164,33 @@ def generate_strengths(resume_text: str, match_score: float, matched_skills: Lis
     
     return strengths[:3] if strengths else ["Some relevant skills identified"]
 
-def generate_weaknesses(resume_text: str, match_score: float, matched_skills: List[str]) -> List[str]:
-    """Generate weaknesses"""
+def generate_weaknesses(resume_text: str, job_description: str, match_score: float, matched_skills: List[str], missing_skills: List[str] = None) -> List[str]:
+    """Generate weaknesses - ONLY show missing tools/skills from job description (NO generic messages)"""
     weaknesses = []
     
-    if len(matched_skills) < 3:
-        weaknesses.append("Limited matching skills")
-    else:
-        weaknesses.append("Could use more experience")
+    # Get missing skills if not provided
+    if missing_skills is None:
+        skill_comparison = get_skill_comparison(resume_text, job_description)
+        missing_skills = skill_comparison.get("missingSkills", [])
     
-    if len(resume_text) < 500:
-        weaknesses.append("Resume lacks detail")
-    else:
-        weaknesses.append("Some skill gaps identified")
+    # Ensure missing_skills is a list
+    if not isinstance(missing_skills, list):
+        missing_skills = []
     
-    if match_score < 70:
-        weaknesses.append("Moderate alignment with job requirements")
-    else:
-        weaknesses.append("Minor areas for improvement")
+    # Filter out invalid skills (phone numbers, emails, etc.)
+    valid_missing_skills = [s for s in missing_skills if is_valid_skill(str(s))]
     
-    return weaknesses[:3]
+    # ONLY show specific missing tools/skills from job description - NO generic messages at all
+    # Format: "Missing required skill/tool: [skill name]"
+    for skill in valid_missing_skills[:15]:  # Show up to 15 missing skills
+        skill_clean = str(skill).strip()
+        if skill_clean:  # Only add non-empty skills
+            weaknesses.append(f"Missing required skill/tool: {skill_clean}")
+    
+    # Return ONLY missing skills - NO generic messages like "Some skill gaps identified"
+    return weaknesses
 
-async def analyze_with_openai(resume_text: str, job_description: str, candidate_name: str) -> Dict:
+async def analyze_with_openai(resume_text: str, job_description: str, candidate_name: str, parsed_data: Dict = None) -> Dict:
     """Analyze resume using OpenAI GPT-4 API (Pure AI)"""
     if not OPENAI_AVAILABLE:
         raise ValueError("OpenAI library not installed. Install with: pip install openai")
@@ -619,17 +1256,25 @@ Respond ONLY with valid JSON, no markdown, no code blocks, no explanations."""
         analysis = json.loads(response_text)
         
         # Ensure all required fields exist
-        match_score = int(analysis.get("matchScore", 0))
+        ai_match_score = int(analysis.get("matchScore", 0))
         skill_comparison = analysis.get("skillComparison", {})
         
-        # Generate improvement suggestions if score < 100%
-        improvement_suggestions = analysis.get("improvementSuggestions", [])
-        if not improvement_suggestions and match_score < 100:
-            improvement_suggestions = generate_improvement_suggestions(
-                resume_text, job_description, match_score, skill_comparison
-            )
+        # If skillComparison is missing or incomplete, generate it
+        if not skill_comparison or not skill_comparison.get("missingSkills"):
+            skill_comparison = get_skill_comparison(resume_text, job_description)
         
-        # Filter matched skills to remove phone numbers, emails, etc.
+        # Recalculate using modern scoring method for accuracy
+        if parsed_data is None:
+            parsed_data = {"name": candidate_name}
+        match_score = calculate_modern_match_score(resume_text, job_description, skill_comparison, parsed_data)
+        
+        # Use AI score as reference but prefer modern calculation
+        # If AI score is very different (>20 points), use average for better accuracy
+        if abs(ai_match_score - match_score) > 20:
+            match_score = int((ai_match_score * 0.3) + (match_score * 0.7))
+        
+        # Generate weaknesses based on missing skills from job description
+        missing_skills_list = skill_comparison.get("missingSkills", [])
         raw_skill_matches = analysis.get("skillMatches", [])
         filtered_skill_matches = [s for s in raw_skill_matches if is_valid_skill(str(s))][:5]
         
@@ -637,15 +1282,40 @@ Respond ONLY with valid JSON, no markdown, no code blocks, no explanations."""
         if not filtered_skill_matches and skill_comparison.get("matchedSkills"):
             filtered_skill_matches = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
         
+        # Generate weaknesses based on missing skills only
+        weaknesses = generate_weaknesses(resume_text, job_description, match_score, filtered_skill_matches, missing_skills_list)
+        
+        # Generate improvement suggestions if score < 100%
+        improvement_suggestions = analysis.get("improvementSuggestions", [])
+        if not improvement_suggestions and match_score < 100:
+            section_validation = skill_comparison.get("sectionValidation", {})
+            improvement_suggestions = generate_improvement_suggestions(
+                resume_text, job_description, match_score, skill_comparison, section_validation
+            )
+        
+        # Run advanced analyses
+        ats_analysis = check_ats_compatibility(resume_text, candidate_name + ".pdf")
+        action_verb_analysis = analyze_action_verbs(resume_text)
+        keyword_analysis = analyze_keyword_density(resume_text, job_description)
+        achievements_analysis = extract_quantifiable_achievements(resume_text)
+        length_structure_analysis = analyze_resume_length_structure(resume_text)
+        
         result = {
             "candidateName": analysis.get("candidateName", candidate_name),
             "matchScore": match_score,
             "strengths": analysis.get("strengths", [])[:3],
-            "weaknesses": analysis.get("weaknesses", [])[:3],
+            "weaknesses": weaknesses[:5],  # Use generated weaknesses based on missing skills
             "skillMatches": filtered_skill_matches,
             "allSkills": [s for s in analysis.get("allSkills", []) if is_valid_skill(str(s))][:10],
             "improvementSuggestions": improvement_suggestions,
-            "skillComparison": skill_comparison
+            "skillComparison": skill_comparison,
+            "advancedAnalysis": {
+                "atsCompatibility": ats_analysis,
+                "actionVerbs": action_verb_analysis,
+                "keywordDensity": keyword_analysis,
+                "quantifiableAchievements": achievements_analysis,
+                "lengthStructure": length_structure_analysis
+            }
         }
         
         print(f"AI Analysis Complete - Match Score: {result['matchScore']}%")
@@ -739,6 +1409,18 @@ Only return the JSON, no other text. [/INST]"""
             # Generate skill comparison if not provided by AI
             skill_comparison = get_skill_comparison(resume_text, job_description)
         
+        # Recalculate using modern scoring method for accuracy
+        ai_match_score = int(match_score) if isinstance(match_score, (int, float)) else 0
+        if isinstance(match_score, str):
+            ai_match_score = int(re.search(r'\d+', match_score).group()) if re.search(r'\d+', match_score) else 0
+        
+        # Note: parsed_data not available in Hugging Face analysis, will use None
+        match_score = calculate_modern_match_score(resume_text, job_description, skill_comparison, None)
+        
+        # Use AI score as reference but prefer modern calculation
+        if abs(ai_match_score - match_score) > 20:
+            match_score = int((ai_match_score * 0.3) + (match_score * 0.7))
+        
         # Filter matched skills to remove phone numbers, emails, etc.
         raw_skill_matches = analysis.get("skillMatches", []) if isinstance(analysis.get("skillMatches"), list) else []
         filtered_skill_matches = [s for s in raw_skill_matches if is_valid_skill(str(s))][:5]
@@ -747,11 +1429,15 @@ Only return the JSON, no other text. [/INST]"""
         if not filtered_skill_matches and skill_comparison.get("matchedSkills"):
             filtered_skill_matches = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
         
+        # Generate weaknesses based on missing skills from job description
+        missing_skills_list = skill_comparison.get("missingSkills", [])
+        weaknesses = generate_weaknesses(resume_text, job_description, match_score, filtered_skill_matches, missing_skills_list)
+        
         return {
             "candidateName": candidate_name,
             "matchScore": int(match_score),
             "strengths": analysis.get("strengths", [])[:3] if isinstance(analysis.get("strengths"), list) else [],
-            "weaknesses": analysis.get("weaknesses", [])[:3] if isinstance(analysis.get("weaknesses"), list) else [],
+            "weaknesses": weaknesses[:5],  # Use generated weaknesses based on missing skills
             "skillMatches": filtered_skill_matches,
             "allSkills": [s for s in (analysis.get("skillMatches", []) if isinstance(analysis.get("skillMatches"), list) else []) if is_valid_skill(str(s))][:10],
             "skillComparison": skill_comparison
@@ -772,9 +1458,14 @@ async def analyze_with_semantic_similarity(resume_text: str, job_description: st
     """Analyze using AI semantic similarity (SentenceTransformer) - Pure AI approach"""
     print("Using PURE AI semantic similarity analysis (SentenceTransformer)...")
     
-    # Calculate semantic similarity using AI embeddings (PURE AI)
-    similarity_score = calculate_semantic_similarity(resume_text, job_description)
-    match_score = int(similarity_score * 100)
+    # Get skill comparison first
+    skill_comparison = get_skill_comparison(resume_text, job_description)
+    
+    # Parse resume for section validation (basic parsing)
+    parsed_data_basic = {"name": candidate_name}  # Minimal parsed data for semantic similarity
+    
+    # Calculate modern match score
+    match_score = calculate_modern_match_score(resume_text, job_description, skill_comparison, parsed_data_basic)
     
     # Use AI embeddings to extract and compare skills (PURE AI)
     embedder = get_embedder()
@@ -812,22 +1503,25 @@ async def analyze_with_semantic_similarity(resume_text: str, job_description: st
         matched_skills = []
         all_skills = []
     
-    # Generate AI-based insights using the similarity score
+    # Generate strengths and weaknesses based on matched/missing skills
+    matched_skills_list = skill_comparison.get("matchedSkills", [])
+    missing_skills_list = skill_comparison.get("missingSkills", [])
+    
+    # Generate strengths based on matched skills
     strengths = []
-    weaknesses = []
-    
-    if match_score >= 80:
-        strengths = ["Excellent match with job requirements", "Strong alignment with role expectations", "Highly qualified candidate"]
-        weaknesses = ["Minor areas for improvement"]
-    elif match_score >= 60:
-        strengths = ["Good match with job requirements", "Relevant experience and skills"]
-        weaknesses = ["Some skill gaps identified", "Could benefit from additional experience"]
+    valid_matched_skills = [s for s in matched_skills_list if is_valid_skill(str(s))]
+    if valid_matched_skills:
+        if len(valid_matched_skills) >= 1:
+            strengths.append(f"Strong {valid_matched_skills[0]} skills")
+        if len(valid_matched_skills) >= 2:
+            strengths.append(f"Proficient in {valid_matched_skills[1]}")
+        if len(valid_matched_skills) >= 3:
+            strengths.append(f"Experienced with {valid_matched_skills[2]}")
     else:
-        strengths = ["Some relevant experience"]
-        weaknesses = ["Significant skill gaps", "Limited alignment with job requirements", "May need additional training"]
+        strengths = ["Some relevant experience"] if match_score >= 60 else []
     
-    # Get skill comparison for suggestions
-    skill_comparison = get_skill_comparison(resume_text, job_description)
+    # Generate weaknesses based on missing skills only
+    weaknesses = generate_weaknesses(resume_text, job_description, match_score, valid_matched_skills, missing_skills_list)
     
     # Generate improvement suggestions if score < 100%
     improvement_suggestions = []
@@ -853,6 +1547,13 @@ async def analyze_with_semantic_similarity(resume_text: str, job_description: st
     if not filtered_matched_skills and skill_comparison.get("matchedSkills"):
         filtered_matched_skills = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
     
+    # Run advanced analyses
+    ats_analysis = check_ats_compatibility(resume_text, candidate_name + ".pdf")
+    action_verb_analysis = analyze_action_verbs(resume_text)
+    keyword_analysis = analyze_keyword_density(resume_text, job_description)
+    achievements_analysis = extract_quantifiable_achievements(resume_text)
+    length_structure_analysis = analyze_resume_length_structure(resume_text)
+    
     return {
         "candidateName": candidate_name,
         "matchScore": match_score,
@@ -861,7 +1562,14 @@ async def analyze_with_semantic_similarity(resume_text: str, job_description: st
         "skillMatches": filtered_matched_skills,
         "allSkills": filtered_all_skills,
         "improvementSuggestions": improvement_suggestions,
-        "skillComparison": skill_comparison
+        "skillComparison": skill_comparison,
+        "advancedAnalysis": {
+            "atsCompatibility": ats_analysis,
+            "actionVerbs": action_verb_analysis,
+            "keywordDensity": keyword_analysis,
+            "quantifiableAchievements": achievements_analysis,
+            "lengthStructure": length_structure_analysis
+        }
     }
 
 async def analyze_resume_file(
@@ -880,6 +1588,14 @@ async def analyze_resume_file(
     parsed_data = parse_resume_with_pyresparser(file_content, file_name)
     candidate_name = parsed_data.get('name') or file_name.replace('.pdf', '').replace('.docx', '').replace('.doc', '') or "Unknown Candidate"
     
+    # Run advanced analyses
+    print("Running advanced resume analyses...")
+    ats_analysis = check_ats_compatibility(resume_text, file_name)
+    action_verb_analysis = analyze_action_verbs(resume_text)
+    keyword_analysis = analyze_keyword_density(resume_text, job_description)
+    achievements_analysis = extract_quantifiable_achievements(resume_text)
+    length_structure_analysis = analyze_resume_length_structure(resume_text)
+    
     # Try AI analysis - OpenAI first, then Hugging Face, then semantic similarity (AI-based)
     use_ai_only = os.getenv("USE_AI_ONLY", "true").lower() == "true"
     
@@ -891,7 +1607,7 @@ async def analyze_resume_file(
         if openai_key and openai_key != "your-openai-api-key-here":
             try:
                 print("Attempting OpenAI analysis...")
-                return await analyze_with_openai(resume_text, job_description, candidate_name)
+                return await analyze_with_openai(resume_text, job_description, candidate_name, parsed_data)
             except Exception as e:
                 print(f"OpenAI analysis failed: {e}")
                 print("Falling back to Hugging Face...")
@@ -923,12 +1639,13 @@ async def analyze_resume_file(
         matched_skills = resume_skills[:5]
     
     skill_comparison = get_skill_comparison(resume_text, job_description)
-    skill_match_score = skill_comparison.get('matchPercentage', 0) / 100.0
-    combined_score = (similarity_score * 0.6) + (skill_match_score * 0.4)
-    match_score = int(max(0, min(100, combined_score * 100)))
+    
+    # Use modern match score calculation with parsed_data
+    match_score = calculate_modern_match_score(resume_text, job_description, skill_comparison, parsed_data)
     
     strengths = generate_strengths(resume_text, similarity_score, matched_skills, parsed_data)
-    weaknesses = generate_weaknesses(resume_text, similarity_score, matched_skills)
+    missing_skills = skill_comparison.get("missingSkills", [])
+    weaknesses = generate_weaknesses(resume_text, job_description, similarity_score, matched_skills, missing_skills)
     
     # Generate improvement suggestions if score < 100%
     improvement_suggestions = []
