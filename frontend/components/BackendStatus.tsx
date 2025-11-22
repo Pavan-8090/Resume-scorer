@@ -13,10 +13,20 @@ export default function BackendStatus() {
 
   const checkBackendStatus = async () => {
     try {
-      await axios.get(`${apiUrl}/health`, { timeout: 10000 });
-      setStatus('online');
+      const response = await axios.get(`${apiUrl}/health`, { 
+        timeout: 10000,
+        validateStatus: (status) => status < 500 // Accept 2xx, 3xx, 4xx as "online"
+      });
+      if (response.status === 200) {
+        setStatus('online');
+      } else {
+        setStatus('offline');
+      }
     } catch (error: any) {
-      console.error('Backend health check failed:', error.message, 'URL:', `${apiUrl}/health`);
+      // Only log if it's a network error, not just a timeout
+      if (error.code !== 'ECONNABORTED') {
+        console.error('Backend health check failed:', error.message, 'URL:', `${apiUrl}/health`);
+      }
       setStatus('offline');
     }
   };

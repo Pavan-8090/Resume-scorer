@@ -141,8 +141,26 @@ if __name__ == "__main__":
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     
     port = int(os.getenv("PORT", 5000))
-    print(f"Starting ResumeScore Python backend on port {port}")
-    print(f"Health check: http://localhost:{port}/health")
-    print(f"API base: http://localhost:{port}/api")
-    print(f"Using: PyResparser + spaCy + SentenceTransformer")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    print(f"✅ Starting ResumeScore Python backend on port {port}")
+    print(f"🔗 Health check: http://localhost:{port}/health")
+    print(f"🔗 API base: http://localhost:{port}/api")
+    print(f"🤖 Using: PyResparser + spaCy + SentenceTransformer")
+    print(f"🔄 Server will auto-restart on errors")
+    print("-" * 60)
+    
+    try:
+        uvicorn.run(
+            app, 
+            host="0.0.0.0", 
+            port=port,
+            log_level="info",
+            access_log=True
+        )
+    except KeyboardInterrupt:
+        print("\n🛑 Server stopped by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n❌ Server error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

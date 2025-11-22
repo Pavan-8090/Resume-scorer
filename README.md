@@ -105,13 +105,19 @@ Make sure MongoDB is running locally or update `MONGODB_URI` to your Atlas conne
 4. **Run the application:**
 
 ```bash
-# Development mode (runs both frontend and backend)
+# Development mode (runs both frontend and backend with auto-restart)
 npm run dev
 
 # Or run separately:
-npm run dev:frontend  # Frontend on http://localhost:3000
-npm run dev:backend   # Backend on http://localhost:5000
+npm run dev:frontend   # Frontend on http://localhost:3000
+npm run dev:backend    # Backend on http://localhost:5000 (with auto-restart)
+
+# Windows: Use startup scripts to ensure backend always runs
+start_backend.bat      # Windows Batch script
+start_backend.ps1      # PowerShell script
 ```
+
+**Note:** The backend now includes auto-restart functionality. If it crashes, it will automatically restart up to 10 times.
 
 ## Usage
 

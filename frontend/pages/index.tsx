@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Navbar from '../components/Navbar';
 import ResumeAnalyzer from '../components/ResumeAnalyzer';
 
@@ -299,8 +300,15 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
             <div className="col-span-1 md:col-span-2">
               <div className="flex items-center space-x-3 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-xl">R</span>
+                <div className="relative w-10 h-10 flex-shrink-0">
+                  <Image
+                    src="/logo.png"
+                    alt="ResumeScore Logo"
+                    width={40}
+                    height={40}
+                    className="object-contain drop-shadow-lg"
+                    unoptimized
+                  />
                 </div>
                 <span className="text-2xl font-bold text-white">ResumeScore</span>
               </div>
