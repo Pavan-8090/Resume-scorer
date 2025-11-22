@@ -1672,3 +1672,457 @@ async def analyze_resume_file(
         "improvementSuggestions": improvement_suggestions,
         "skillComparison": skill_comparison
     }
+
+# ==================== RESUME REWRITING FUNCTIONS ====================
+
+def parse_resume_sections(resume_text: str) -> Dict[str, str]:
+    """Parse resume into structured sections"""
+    sections = {
+        "summary": "",
+        "experience": "",
+        "education": "",
+        "skills": "",
+        "projects": "",
+        "contact": ""
+    }
+    
+    # Normalize text
+    text = resume_text.strip()
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    # Common section headers
+    section_patterns = {
+        "summary": r"^(summary|objective|profile|about|overview|professional summary|executive summary)",
+        "experience": r"^(experience|work experience|employment|professional experience|career history|work history)",
+        "education": r"^(education|academic|qualifications|degrees|certifications|certificates)",
+        "skills": r"^(skills|technical skills|core competencies|competencies|expertise|technologies)",
+        "projects": r"^(projects|project experience|key projects|notable projects)"
+    }
+    
+    current_section = None
+    section_content = []
+    
+    for line in lines:
+        line_lower = line.lower()
+        matched = False
+        
+        # Check if line is a section header
+        for section_name, pattern in section_patterns.items():
+            if re.match(pattern, line_lower, re.IGNORECASE):
+                # Save previous section
+                if current_section and section_content:
+                    sections[current_section] = '\n'.join(section_content).strip()
+                
+                # Start new section
+                current_section = section_name
+                section_content = []
+                matched = True
+                break
+        
+        if not matched and current_section:
+            section_content.append(line)
+        elif not matched and not current_section:
+            # Content before any section header (likely summary or contact)
+            if len(line) < 100 and ('@' in line or re.search(r'\d{3}[-.\s]?\d{3}[-.\s]?\d{4}', line)):
+                sections["contact"] += line + '\n'
+            elif not sections["summary"]:
+                sections["summary"] += line + '\n'
+    
+    # Save last section
+    if current_section and section_content:
+        sections[current_section] = '\n'.join(section_content).strip()
+    
+    # Clean up sections
+    for key in sections:
+        sections[key] = sections[key].strip()
+    
+    return sections
+
+async def rewrite_resume_with_ai(resume_text: str, job_description: str, parsed_sections: Dict[str, str]) -> str:
+    """Rewrite resume using AI (OpenAI or Hugging Face)"""
+    # Build structured prompt
+    system_prompt = """You are an expert resume editor and ATS (Applicant Tracking System) optimization specialist. Your task is to rewrite resumes to be:
+1. ATS-friendly (no tables, icons, or complex formatting)
+2. Professional and clear
+3. Optimized with strong action verbs
+4. Enhanced with measurable achievements
+5. Tailored to match the job description keywords
+6. Well-structured with clear sections
+
+Output a fully improved resume in clean text format with clear sections:
+- Contact Information
+- Summary
+- Skills
+- Experience (with bullet points using action verbs + metrics)
+- Education
+- Projects (if applicable)
+
+Make sure to:
+- Use strong action verbs (Led, Developed, Implemented, Achieved, etc.)
+- Include quantifiable metrics where possible
+- Match keywords from the job description
+- Maintain professional tone
+- Keep it concise and impactful"""
+
+    user_prompt = f"""Rewrite the following resume to be ATS-friendly and optimized for this job description.
+
+JOB DESCRIPTION:
+{job_description}
+
+ORIGINAL RESUME:
+{resume_text}
+
+RESUME SECTIONS (for reference):
+{json.dumps(parsed_sections, indent=2)}
+
+Please provide a fully rewritten, improved resume that:
+1. Matches the job description keywords
+2. Uses strong action verbs
+3. Includes quantifiable achievements
+4. Is ATS-friendly (plain text, no tables/icons)
+5. Has clear section headers
+6. Is professional and impactful
+
+Output the complete rewritten resume:"""
+
+    # Try OpenAI first
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key and openai_key != "your-openai-api-key-here" and OPENAI_AVAILABLE:
+        try:
+            client = openai.OpenAI(api_key=openai_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=3000
+            )
+            rewritten = response.choices[0].message.content.strip()
+            print("SUCCESS: Resume rewritten using OpenAI")
+            return rewritten
+        except Exception as e:
+            print(f"OpenAI rewrite failed: {e}, trying Hugging Face...")
+    
+    # Try Hugging Face Inference API
+    hf_token = os.getenv("HF_TOKEN")
+    if hf_token:
+        try:
+            api_url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+            headers = {"Authorization": f"Bearer {hf_token}"}
+            
+            prompt_text = f"{system_prompt}\n\n{user_prompt}"
+            payload = {
+                "inputs": prompt_text,
+                "parameters": {
+                    "max_new_tokens": 2000,
+                    "temperature": 0.7,
+                    "return_full_text": False
+                }
+            }
+            
+            response = requests.post(api_url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            
+            if isinstance(result, list) and len(result) > 0:
+                rewritten = result[0].get("generated_text", "").strip()
+                print("SUCCESS: Resume rewritten using Hugging Face")
+                return rewritten
+            else:
+                raise Exception("Unexpected response format from Hugging Face")
+        except Exception as e:
+            print(f"Hugging Face rewrite failed: {e}")
+            raise Exception("AI resume rewriting failed. Please check OPENAI_API_KEY or HF_TOKEN configuration.")
+    
+    raise Exception("No AI service available. Please configure OPENAI_API_KEY or HF_TOKEN.")
+
+def create_docx_from_text(text: str, filename: str = "improved_resume.docx") -> bytes:
+    """Create a professionally formatted DOCX file from text"""
+    try:
+        from docx import Document
+        from docx.shared import Pt, RGBColor, Inches
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml.ns import qn
+        
+        doc = Document()
+        
+        # Set document margins
+        sections = doc.sections
+        for section in sections:
+            section.top_margin = Inches(0.5)
+            section.bottom_margin = Inches(0.5)
+            section.left_margin = Inches(0.7)
+            section.right_margin = Inches(0.7)
+        
+        # Parse text into sections
+        lines = text.split('\n')
+        in_bullet_list = False
+        
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line:
+                if in_bullet_list:
+                    in_bullet_list = False
+                continue
+            
+            # Check if line is a section header
+            is_header = (
+                (line.isupper() and len(line) < 50 and len(line.split()) < 5) or
+                any(header in line.lower() for header in [
+                    'summary', 'experience', 'education', 'skills', 'projects', 
+                    'contact', 'objective', 'profile', 'work experience', 
+                    'professional experience', 'employment', 'certifications'
+                ])
+            )
+            
+            # Check if line is a bullet point
+            is_bullet = (
+                line.startswith('•') or line.startswith('-') or 
+                line.startswith('*') or line.startswith('▪') or
+                (len(line) > 2 and line[0].isdigit() and line[1] in ['.', ')'])
+            )
+            
+            if is_header:
+                # Add spacing before header (except first)
+                if i > 0:
+                    doc.add_paragraph()
+                
+                # Add section header with formatting
+                p = doc.add_paragraph()
+                run = p.add_run(line.upper())
+                run.bold = True
+                run.font.size = Pt(14)
+                run.font.color.rgb = RGBColor(0, 51, 102)  # Navy blue
+                p.paragraph_format.space_after = Pt(6)
+                in_bullet_list = False
+            elif is_bullet:
+                # Add bullet point
+                p = doc.add_paragraph()
+                # Remove bullet character and add formatted text
+                clean_line = line.lstrip('•-*▪').strip()
+                if clean_line and clean_line[0].isdigit() and len(clean_line) > 2:
+                    clean_line = clean_line.split('.', 1)[-1].strip()
+                    clean_line = clean_line.split(')', 1)[-1].strip()
+                
+                run = p.add_run(clean_line)
+                run.font.size = Pt(11)
+                p.style = 'List Bullet'
+                p.paragraph_format.left_indent = Inches(0.25)
+                p.paragraph_format.space_after = Pt(4)
+                in_bullet_list = True
+            else:
+                # Regular content
+                p = doc.add_paragraph(line)
+                run = p.runs[0] if p.runs else p.add_run(line)
+                run.font.size = Pt(11)
+                p.paragraph_format.space_after = Pt(4)
+                in_bullet_list = False
+        
+        # Save to bytes
+        import io
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        return buffer.read()
+    except ImportError:
+        raise Exception("python-docx not installed. Install with: pip install python-docx")
+    except Exception as e:
+        raise Exception(f"Failed to create DOCX: {str(e)}")
+
+def create_pdf_from_text(text: str) -> bytes:
+    """Create a professionally formatted PDF from text"""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER
+        from reportlab.lib.colors import HexColor
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from xml.sax.saxutils import escape as xml_escape
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter,
+                               rightMargin=0.7*inch, leftMargin=0.7*inch,
+                               topMargin=0.5*inch, bottomMargin=0.5*inch)
+        
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=14,
+            textColor=HexColor('#003366'),
+            spaceAfter=6,
+            fontName='Helvetica-Bold'
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=11,
+            spaceAfter=4,
+            leading=14
+        )
+        
+        bullet_style = ParagraphStyle(
+            'CustomBullet',
+            parent=styles['Normal'],
+            fontSize=11,
+            leftIndent=20,
+            spaceAfter=4,
+            leading=14
+        )
+        
+        # Parse and build PDF content
+        story = []
+        lines = text.split('\n')
+        
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line:
+                story.append(Spacer(1, 4))
+                continue
+            
+            # Check if line is a section header
+            is_header = (
+                (line.isupper() and len(line) < 50 and len(line.split()) < 5) or
+                any(header in line.lower() for header in [
+                    'summary', 'experience', 'education', 'skills', 'projects', 
+                    'contact', 'objective', 'profile', 'work experience', 
+                    'professional experience', 'employment', 'certifications'
+                ])
+            )
+            
+            # Check if line is a bullet point
+            is_bullet = (
+                line.startswith('•') or line.startswith('-') or 
+                line.startswith('*') or line.startswith('▪') or
+                (len(line) > 2 and line[0].isdigit() and line[1] in ['.', ')'])
+            )
+            
+            if is_header:
+                if i > 0:
+                    story.append(Spacer(1, 8))
+                # Escape XML special characters for reportlab
+                escaped_line = xml_escape(line.upper())
+                story.append(Paragraph(escaped_line, title_style))
+                story.append(Spacer(1, 4))
+            elif is_bullet:
+                clean_line = line.lstrip('•-*▪').strip()
+                if clean_line and clean_line[0].isdigit() and len(clean_line) > 2:
+                    clean_line = clean_line.split('.', 1)[-1].strip()
+                    clean_line = clean_line.split(')', 1)[-1].strip()
+                # Escape XML special characters
+                escaped_line = xml_escape(clean_line)
+                story.append(Paragraph(f"• {escaped_line}", bullet_style))
+            else:
+                # Escape XML special characters
+                escaped_line = xml_escape(line)
+                story.append(Paragraph(escaped_line, normal_style))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.read()
+    except ImportError:
+        raise Exception("reportlab not installed. Install with: pip install reportlab")
+    except Exception as e:
+        raise Exception(f"Failed to create PDF: {str(e)}")
+
+def create_markdown_from_text(text: str) -> str:
+    """Convert text to Markdown format"""
+    lines = text.split('\n')
+    markdown_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            markdown_lines.append('')
+            continue
+        
+        # Check if line is a section header
+        is_header = (
+            (line.isupper() and len(line) < 50 and len(line.split()) < 5) or
+            any(header in line.lower() for header in [
+                'summary', 'experience', 'education', 'skills', 'projects', 
+                'contact', 'objective', 'profile', 'work experience', 
+                'professional experience', 'employment', 'certifications'
+            ])
+        )
+        
+        # Check if line is a bullet point
+        is_bullet = (
+            line.startswith('•') or line.startswith('-') or 
+            line.startswith('*') or line.startswith('▪') or
+            (len(line) > 2 and line[0].isdigit() and line[1] in ['.', ')'])
+        )
+        
+        if is_header:
+            markdown_lines.append(f"\n## {line}\n")
+        elif is_bullet:
+            clean_line = line.lstrip('•-*▪').strip()
+            if clean_line and clean_line[0].isdigit() and len(clean_line) > 2:
+                clean_line = clean_line.split('.', 1)[-1].strip()
+                clean_line = clean_line.split(')', 1)[-1].strip()
+            markdown_lines.append(f"- {clean_line}")
+        else:
+            markdown_lines.append(line)
+    
+    return '\n'.join(markdown_lines)
+
+async def rewrite_resume(
+    file_content: bytes,
+    file_name: str,
+    job_description: str
+) -> Dict:
+    """Main function to rewrite resume - Returns all formats and re-analysis"""
+    # Extract resume text
+    resume_text = extract_resume_text(file_content, file_name)
+    
+    if not resume_text or len(resume_text.strip()) < 50:
+        raise ValueError("Could not extract sufficient text from resume")
+    
+    # Parse resume sections
+    parsed_sections = parse_resume_sections(resume_text)
+    
+    # Rewrite with AI
+    rewritten_text = await rewrite_resume_with_ai(resume_text, job_description, parsed_sections)
+    
+    # Generate all export formats
+    docx_bytes = create_docx_from_text(rewritten_text)
+    pdf_bytes = create_pdf_from_text(rewritten_text)
+    markdown_text = create_markdown_from_text(rewritten_text)
+    
+    # Re-analyze the rewritten resume
+    rewritten_analysis = None
+    try:
+        # Create a temporary file-like object for analysis
+        rewritten_file_content = rewritten_text.encode('utf-8')
+        rewritten_analysis = await analyze_resume_file(
+            file_content=rewritten_file_content,
+            file_name="improved_resume.txt",
+            job_description=job_description
+        )
+    except Exception as e:
+        print(f"Warning: Could not re-analyze rewritten resume: {e}")
+    
+    # Encode all formats to base64
+    import base64
+    base_name = file_name.replace('.pdf', '').replace('.docx', '').replace('.doc', '') + '_improved'
+    
+    return {
+        "originalResume": resume_text,
+        "rewrittenResume": rewritten_text,
+        "originalScore": None,  # Will be set by caller if available
+        "rewrittenScore": rewritten_analysis.get("matchScore") if rewritten_analysis else None,
+        "scoreImprovement": None,  # Will be calculated in frontend
+        "docxBase64": base64.b64encode(docx_bytes).decode('utf-8'),
+        "pdfBase64": base64.b64encode(pdf_bytes).decode('utf-8'),
+        "markdownText": markdown_text,
+        "fileName": base_name,
+        "rewrittenAnalysis": rewritten_analysis  # Full analysis for comparison
+    }

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -132,6 +132,37 @@ async def upload_model(request: ModelUploadRequest):
             raise HTTPException(status_code=500, detail="Failed to upload model")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/resume/rewrite")
+async def rewrite_resume_endpoint(
+    resume: UploadFile = File(...),
+    job_description: str = Form(...),
+    original_score: Optional[float] = Form(None)
+):
+    """Rewrite resume to match job description using AI"""
+    try:
+        file_content = await resume.read()
+        file_name = resume.filename or "resume.pdf"
+        
+        from resume_analyzer import rewrite_resume
+        
+        result = await rewrite_resume(
+            file_content=file_content,
+            file_name=file_name,
+            job_description=job_description
+        )
+        
+        # Add original score if provided
+        if original_score is not None:
+            result["originalScore"] = original_score
+            if result.get("rewrittenScore"):
+                result["scoreImprovement"] = result["rewrittenScore"] - original_score
+        
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to rewrite resume: {str(e)}")
 
 if __name__ == "__main__":
     import sys
