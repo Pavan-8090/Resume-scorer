@@ -1,0 +1,28 @@
+/* Styles for injected buttons and UI elements */
+
+.resumescore-analyze-btn {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  z-index: 10000;
+  position: relative;
+}
+
+.resumescore-analyze-btn:hover {
+  opacity: 0.9;
+}
+
+.resumescore-gmail-btn {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  z-index: 10000;
+  position: relative;
+}
+
+.resumescore-gmail-btn:hover {
+  opacity: 0.9;
+}
+
+
+
+
+
+
+

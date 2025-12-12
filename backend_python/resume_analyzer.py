@@ -149,12 +149,25 @@ def extract_resume_text(file_content: bytes, file_name: str) -> str:
     """Extract text from resume file"""
     file_ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
     
-    if file_ext == 'pdf':
+    # Handle plain text files (for Chrome extension)
+    if file_ext in ['txt', 'text']:
+        try:
+            return file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                return file_content.decode('latin-1')
+            except:
+                return file_content.decode('utf-8', errors='ignore')
+    elif file_ext == 'pdf':
         return extract_text_from_pdf(file_content)
     elif file_ext in ['docx', 'doc']:
         return extract_text_from_docx(file_content)
     else:
-        raise ValueError(f"Unsupported file type: {file_ext}")
+        # Try to decode as text if no extension or unknown extension
+        try:
+            return file_content.decode('utf-8')
+        except:
+            raise ValueError(f"Unsupported file type: {file_ext}")
 
 def extract_skills_with_spacy(resume_text: str) -> List[str]:
     """Extract skills using spaCy"""
@@ -267,75 +280,278 @@ def calculate_keyword_match(resume_text: str, job_description: str) -> float:
     final_score = base_score + bonus
     return min(1.0, max(0.0, final_score))
 
-def extract_job_required_skills(job_description: str) -> List[str]:
-    """Extract skills mentioned in job description - comprehensive list"""
-    job_lower = job_description.lower()
-    
-    skills = [
+def get_comprehensive_skills_database() -> Dict[str, List[str]]:
+    """Get comprehensive database of skills with synonyms and variations"""
+    return {
         # Programming Languages
-        'javascript', 'python', 'java', 'typescript', 'c++', 'c#', 'php', 'ruby', 'go', 'rust', 'swift', 'kotlin',
+        'javascript': ['javascript', 'js', 'ecmascript', 'nodejs', 'node.js'],
+        'python': ['python', 'python3', 'python2', 'py'],
+        'java': ['java', 'java ee', 'java se', 'j2ee'],
+        'typescript': ['typescript', 'ts'],
+        'c++': ['c++', 'cpp', 'c plus plus'],
+        'c#': ['c#', 'csharp', 'c-sharp', '.net'],
+        'php': ['php'],
+        'ruby': ['ruby', 'ruby on rails', 'rails'],
+        'go': ['go', 'golang', 'go language'],
+        'rust': ['rust'],
+        'swift': ['swift'],
+        'kotlin': ['kotlin'],
+        'scala': ['scala'],
+        'r': ['r', 'r language', 'r programming'],
         # Web Technologies
-        'react', 'node.js', 'angular', 'vue', 'next.js', 'nuxt', 'express', 'django', 'flask', 'spring', 'laravel',
-        'html', 'css', 'sass', 'scss', 'bootstrap', 'tailwind', 'jquery',
+        'react': ['react', 'react.js', 'reactjs', 'react native'],
+        'node.js': ['node.js', 'nodejs', 'node', 'express.js', 'express'],
+        'angular': ['angular', 'angularjs', 'angular.js'],
+        'vue': ['vue', 'vue.js', 'vuejs'],
+        'next.js': ['next.js', 'nextjs'],
+        'nuxt': ['nuxt', 'nuxt.js', 'nuxtjs'],
+        'django': ['django', 'django framework'],
+        'flask': ['flask', 'flask framework'],
+        'spring': ['spring', 'spring boot', 'spring framework'],
+        'laravel': ['laravel', 'laravel framework'],
+        'html': ['html', 'html5'],
+        'css': ['css', 'css3'],
+        'sass': ['sass', 'scss'],
+        'bootstrap': ['bootstrap'],
+        'tailwind': ['tailwind', 'tailwind css'],
+        'jquery': ['jquery'],
         # Databases
-        'sql', 'mysql', 'postgresql', 'mongodb', 'redis', 'oracle', 'sqlite', 'dynamodb', 'cassandra', 'elasticsearch',
+        'sql': ['sql', 'mysql', 'postgresql', 'postgres', 'sqlite', 'mssql', 'sql server'],
+        'mysql': ['mysql'],
+        'postgresql': ['postgresql', 'postgres'],
+        'mongodb': ['mongodb', 'mongo'],
+        'redis': ['redis'],
+        'oracle': ['oracle', 'oracle db', 'oracle database'],
+        'dynamodb': ['dynamodb', 'dynamo db'],
+        'cassandra': ['cassandra'],
+        'elasticsearch': ['elasticsearch', 'elastic search', 'elk'],
         # Cloud & DevOps
-        'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'ansible', 'jenkins', 'ci/cd', 'github actions',
-        'git', 'gitlab', 'bitbucket', 'nginx', 'apache', 'linux', 'unix',
+        'aws': ['aws', 'amazon web services', 'amazon aws'],
+        'azure': ['azure', 'microsoft azure'],
+        'gcp': ['gcp', 'google cloud', 'google cloud platform'],
+        'docker': ['docker', 'docker container'],
+        'kubernetes': ['kubernetes', 'k8s'],
+        'terraform': ['terraform'],
+        'ansible': ['ansible'],
+        'jenkins': ['jenkins'],
+        'ci/cd': ['ci/cd', 'ci cd', 'continuous integration', 'continuous deployment'],
+        'github actions': ['github actions', 'github ci'],
+        'git': ['git', 'github', 'gitlab', 'bitbucket'],
+        'nginx': ['nginx'],
+        'apache': ['apache', 'apache http server'],
+        'linux': ['linux', 'ubuntu', 'centos', 'debian'],
         # Data & AI
-        'machine learning', 'data science', 'ai', 'artificial intelligence', 'tensorflow', 'pytorch', 'pandas', 'numpy',
-        'tableau', 'power bi', 'spark', 'hadoop', 'kafka', 'rabbitmq',
+        'machine learning': ['machine learning', 'ml', 'deep learning'],
+        'data science': ['data science', 'data scientist'],
+        'ai': ['ai', 'artificial intelligence'],
+        'tensorflow': ['tensorflow', 'tf'],
+        'pytorch': ['pytorch', 'torch'],
+        'pandas': ['pandas'],
+        'numpy': ['numpy'],
+        'tableau': ['tableau'],
+        'power bi': ['power bi', 'powerbi'],
+        'spark': ['spark', 'apache spark'],
+        'hadoop': ['hadoop', 'apache hadoop'],
+        'kafka': ['kafka', 'apache kafka'],
+        'rabbitmq': ['rabbitmq', 'rabbit mq'],
         # Other Tools
-        'graphql', 'rest api', 'microservices', 'agile', 'scrum', 'jira', 'confluence',
-        # Soft Skills
-        'leadership', 'communication', 'project management', 'teamwork', 'problem solving', 'analytics',
-        'marketing', 'sales', 'design', 'writing', 'analysis'
-    ]
+        'graphql': ['graphql', 'graph ql'],
+        'rest api': ['rest api', 'rest', 'restful', 'restful api'],
+        'microservices': ['microservices', 'microservice'],
+        'agile': ['agile', 'scrum', 'kanban'],
+        'jira': ['jira'],
+        'confluence': ['confluence'],
+    }
+
+def extract_job_required_skills(job_description: str) -> List[str]:
+    """Extract skills mentioned in job description - comprehensive and accurate"""
+    import re
+    job_lower = job_description.lower()
+    job_original = job_description
+    
+    # Get comprehensive skills database
+    skills_db = get_comprehensive_skills_database()
+    
+    # Build a flat list of all skill variations for quick lookup
+    skill_variations = {}
+    for skill_name, variations in skills_db.items():
+        for variation in variations:
+            skill_variations[variation.lower()] = skill_name
+    
+    # Also create reverse lookup for original skill names
+    all_skill_names = list(skills_db.keys())
     
     required = []
-    for skill in skills:
-        if skill in job_lower:
-            required.append(skill.title())
+    found_skills = set()
     
-    # Also extract any capitalized technical terms (likely tools/technologies)
-    import re
-    # Find capitalized words that might be tools/technologies
-    tech_patterns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', job_description)
-    for pattern in tech_patterns:
-        pattern_lower = pattern.lower()
-        # If it's a known skill or looks like a technology name
-        if pattern_lower in skills or (len(pattern) >= 3 and pattern not in required and pattern not in ['The', 'This', 'That', 'With', 'From']):
-            if pattern not in required:
-                required.append(pattern)
+    # Method 1: Direct matching against skills database (most reliable)
+    for skill_name, variations in skills_db.items():
+        for variation in variations:
+            # Use word boundaries to avoid partial matches
+            pattern = r'\b' + re.escape(variation.lower()) + r'\b'
+            if re.search(pattern, job_lower, re.IGNORECASE):
+                if skill_name not in found_skills:
+                    found_skills.add(skill_name)
+                    required.append(skill_name.title())
     
-    return required[:20]  # Return top 20 required skills
+    # Method 2: Extract technical terms with better regex (only for known skills)
+    # Look for capitalized technical terms that match our skills database
+    # Pattern: Word boundaries, capitalized word(s), possibly with dots/slashes
+    tech_pattern = r'\b([A-Z][a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)?(?:\/[a-zA-Z0-9]+)?(?:\s+[A-Z][a-zA-Z0-9]+)*)\b'
+    potential_skills = re.findall(tech_pattern, job_original)
+    
+    # Common words to exclude
+    excluded_words = {
+        'The', 'This', 'That', 'With', 'From', 'Your', 'Our', 'Their', 'These',
+        'Company', 'Team', 'Work', 'Role', 'Position', 'Job', 'Experience',
+        'Required', 'Preferred', 'Must', 'Should', 'Will', 'Have', 'Need',
+        'Responsibilities', 'Qualifications', 'Skills', 'Requirements'
+    }
+    
+    for potential in potential_skills:
+        potential_lower = potential.lower()
+        
+        # Skip if too short (likely broken word)
+        if len(potential) < 3:
+            continue
+            
+        # Skip excluded common words
+        if potential in excluded_words:
+            continue
+        
+        # Check if it matches any skill variation
+        if potential_lower in skill_variations:
+            skill_name = skill_variations[potential_lower]
+            if skill_name not in found_skills:
+                found_skills.add(skill_name)
+                required.append(skill_name.title())
+        # Check if it's a direct match to a skill name
+        elif potential_lower in [s.lower() for s in all_skill_names]:
+            skill_name = next(s for s in all_skill_names if s.lower() == potential_lower)
+            if skill_name not in found_skills:
+                found_skills.add(skill_name)
+                required.append(skill_name.title())
+    
+    # Method 3: Extract skills from common phrases
+    skill_phrases = {
+        'machine learning': 'Machine Learning',
+        'data science': 'Data Science',
+        'artificial intelligence': 'AI',
+        'rest api': 'REST API',
+        'ci/cd': 'CI/CD',
+        'github actions': 'GitHub Actions'
+    }
+    
+    for phrase, skill_name in skill_phrases.items():
+        if phrase in job_lower and skill_name not in required:
+            required.append(skill_name)
+    
+    # Validate all extracted skills
+    validated_required = []
+    for skill in required:
+        if is_valid_skill(skill):
+            # Additional validation: check if skill is in our database
+            skill_lower = skill.lower()
+            if skill_lower in all_skill_names or any(skill_lower in variations for variations in skills_db.values()):
+                validated_required.append(skill)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_required = []
+    for skill in validated_required:
+        skill_lower = skill.lower()
+        if skill_lower not in seen:
+            seen.add(skill_lower)
+            unique_required.append(skill)
+    
+    return unique_required[:25]  # Return top 25 required skills
 
 def extract_resume_skills(resume_text: str) -> List[str]:
-    """Extract skills mentioned in resume"""
+    """Extract skills mentioned in resume - comprehensive and accurate"""
+    import re
     resume_lower = resume_text.lower()
+    resume_original = resume_text
     
-    skills = [
-        'javascript', 'python', 'java', 'react', 'node.js', 'sql', 'html', 'css',
-        'typescript', 'angular', 'vue', 'express', 'django', 'flask', 'spring',
-        'leadership', 'communication', 'project management', 'teamwork', 'problem solving',
-        'marketing', 'sales', 'analytics', 'design', 'writing', 'analysis', 'agile',
-        'devops', 'aws', 'docker', 'kubernetes', 'git', 'ci/cd', 'machine learning',
-        'data science', 'ai', 'tensorflow', 'pytorch', 'postgresql', 'mongodb', 'redis',
-        'elasticsearch', 'kafka', 'rabbitmq', 'nginx', 'apache', 'linux', 'terraform',
-        'ansible', 'jenkins', 'github actions', 'graphql', 'rest api', 'microservices'
-    ]
+    # Get comprehensive skills database
+    skills_db = get_comprehensive_skills_database()
+    
+    # Build lookup for skill variations
+    skill_variations = {}
+    for skill_name, variations in skills_db.items():
+        for variation in variations:
+            skill_variations[variation.lower()] = skill_name
+    
+    all_skill_names = list(skills_db.keys())
     
     found = []
-    for skill in skills:
-        if skill in resume_lower:
-            found.append(skill.title())
+    found_skills = set()
     
-    return found[:15]  # Return top 15 resume skills
+    # Method 1: Direct matching against skills database (most reliable)
+    for skill_name, variations in skills_db.items():
+        for variation in variations:
+            # Use word boundaries to avoid partial matches
+            pattern = r'\b' + re.escape(variation.lower()) + r'\b'
+            if re.search(pattern, resume_lower, re.IGNORECASE):
+                if skill_name not in found_skills:
+                    found_skills.add(skill_name)
+                    found.append(skill_name.title())
+    
+    # Method 2: Extract from skills section (if present)
+    skills_section_patterns = [
+        r'skills?[:\s]+(.*?)(?:\n\n|\n[A-Z]|$)',
+        r'technologies?[:\s]+(.*?)(?:\n\n|\n[A-Z]|$)',
+        r'tools?[:\s]+(.*?)(?:\n\n|\n[A-Z]|$)',
+        r'expertise[:\s]+(.*?)(?:\n\n|\n[A-Z]|$)',
+    ]
+    
+    for pattern in skills_section_patterns:
+        matches = re.finditer(pattern, resume_original, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+        for match in matches:
+            skills_text = match.group(1)
+            # Extract individual skills (comma, semicolon, or newline separated)
+            individual_skills = re.split(r'[,;\n]', skills_text)
+            for skill_item in individual_skills:
+                skill_item = skill_item.strip()
+                if len(skill_item) >= 2:
+                    skill_lower = skill_item.lower()
+                    # Check if it matches any skill variation
+                    if skill_lower in skill_variations:
+                        skill_name = skill_variations[skill_lower]
+                        if skill_name not in found_skills:
+                            found_skills.add(skill_name)
+                            found.append(skill_name.title())
+    
+    # Validate all extracted skills
+    validated_found = []
+    for skill in found:
+        if is_valid_skill(skill):
+            skill_lower = skill.lower()
+            if skill_lower in all_skill_names or any(skill_lower in variations for variations in skills_db.values()):
+                validated_found.append(skill)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_found = []
+    for skill in validated_found:
+        skill_lower = skill.lower()
+        if skill_lower not in seen:
+            seen.add(skill_lower)
+            unique_found.append(skill)
+    
+    return unique_found[:20]  # Return top 20 resume skills
 
 def is_valid_skill(skill: str) -> bool:
-    """Check if a string is a valid skill (not phone number, email, etc.)"""
+    """Check if a string is a valid skill (not phone number, email, broken words, etc.)"""
     import re
     skill_lower = skill.lower().strip()
+    
+    # Filter out empty or very short strings
+    if len(skill_lower) < 2:
+        return False
+    
+    # Filter out pure numbers
+    if skill_lower.isdigit():
+        return False
     
     # Filter out phone numbers (patterns like (501) 650-8445, 501-650-8445, etc.)
     phone_pattern = r'[\d\s\-\(\)]{10,}'
@@ -352,41 +568,109 @@ def is_valid_skill(skill: str) -> bool:
     if re.search(url_pattern, skill_lower):
         return False
     
-    # Filter out pure numbers or very short strings
-    if len(skill_lower) < 2 or skill_lower.isdigit():
-        return False
+    # Filter out broken words (words with only consonants or only vowels, or weird patterns)
+    # Check for words that look like they were broken (e.g., "Yig", "Kuy", "Fre", "Onamr")
+    if len(skill_lower) <= 4:
+        # For short words, check if they're valid
+        # Allow common short skills like "C#", "R", "Go", "AI", "SQL"
+        valid_short_skills = {'c#', 'c++', 'r', 'go', 'ai', 'ml', 'sql', 'js', 'ts', 'py', 'ui', 'ux', 'api', 'ci', 'cd', 'aws', 'gcp'}
+        if skill_lower not in valid_short_skills:
+            # Check if it looks like a broken word (too many consonants in a row, or weird pattern)
+            consonants = sum(1 for c in skill_lower if c.isalpha() and c not in 'aeiou')
+            vowels = sum(1 for c in skill_lower if c in 'aeiou')
+            # If it's mostly consonants or has weird patterns, likely broken
+            if len(skill_lower) >= 3 and (consonants > len(skill_lower) * 0.7 or vowels == 0):
+                return False
     
     # Filter out common non-skill words
-    non_skills = ['com', 'www', 'http', 'https', 'email', 'phone', 'address', 'summary']
+    non_skills = {
+        'com', 'www', 'http', 'https', 'email', 'phone', 'address', 'summary',
+        'the', 'this', 'that', 'with', 'from', 'your', 'our', 'their', 'these',
+        'company', 'team', 'work', 'role', 'position', 'job', 'experience',
+        'required', 'preferred', 'must', 'should', 'will', 'have', 'need',
+        'responsibilities', 'qualifications', 'skills', 'requirements', 'years',
+        'year', 'month', 'months', 'day', 'days', 'hour', 'hours'
+    }
     if skill_lower in non_skills:
         return False
+    
+    # Filter out words that are clearly not skills (common English words)
+    common_words = {
+        'and', 'or', 'but', 'not', 'for', 'are', 'was', 'were', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+        'may', 'might', 'can', 'cannot', 'able', 'about', 'above', 'after', 'again',
+        'against', 'all', 'also', 'am', 'an', 'any', 'as', 'at', 'be', 'because',
+        'before', 'below', 'between', 'both', 'by', 'each', 'few', 'first', 'get',
+        'good', 'great', 'how', 'if', 'into', 'its', 'just', 'know', 'like', 'make',
+        'many', 'more', 'most', 'much', 'new', 'now', 'only', 'other', 'out', 'over',
+        'own', 'same', 'see', 'she', 'some', 'such', 'take', 'than', 'them', 'then',
+        'there', 'these', 'they', 'this', 'time', 'two', 'use', 'very', 'want', 'way',
+        'well', 'what', 'when', 'where', 'which', 'who', 'why', 'will', 'with', 'year'
+    }
+    if skill_lower in common_words:
+        return False
+    
+    # Check if it contains only special characters (not valid)
+    if not any(c.isalnum() for c in skill):
+        return False
+    
+    # Check for suspicious patterns (likely broken words)
+    # Pattern: 3-4 letter words with unusual consonant clusters
+    if 3 <= len(skill_lower) <= 4:
+        # Check for unusual patterns like "yig", "kuy" (consonant-heavy short words)
+        unusual_patterns = [
+            r'^[^aeiou]{3,}$',  # All consonants
+            r'^[aeiou]{3,}$',   # All vowels
+            r'^[^aeiou]{2}[aeiou][^aeiou]$',  # Unusual consonant clusters
+        ]
+        for pattern in unusual_patterns:
+            if re.match(pattern, skill_lower):
+                # Allow if it's a known short skill
+                if skill_lower not in valid_short_skills:
+                    return False
     
     return True
 
 def extract_matched_skills(resume_text: str, job_description: str) -> List[str]:
-    """Extract skills that match between resume and job description"""
+    """Extract skills that match between resume and job description - accurate and validated"""
+    import re
     resume_lower = resume_text.lower()
     job_lower = job_description.lower()
     
-    skills = [
-        'javascript', 'python', 'java', 'react', 'node.js', 'sql', 'html', 'css',
-        'typescript', 'angular', 'vue', 'express', 'django', 'flask', 'spring',
-        'leadership', 'communication', 'project management', 'teamwork', 'problem solving',
-        'marketing', 'sales', 'analytics', 'design', 'writing', 'analysis', 'agile',
-        'devops', 'aws', 'docker', 'kubernetes', 'git', 'ci/cd', 'machine learning',
-        'data science', 'ai', 'tensorflow', 'pytorch', 'postgresql', 'mongodb', 'redis',
-        'elasticsearch', 'kafka', 'rabbitmq', 'nginx', 'apache', 'linux', 'terraform',
-        'ansible', 'jenkins', 'github actions', 'graphql', 'rest api', 'microservices'
-    ]
+    # Get comprehensive skills database
+    skills_db = get_comprehensive_skills_database()
+    
+    # Build lookup for skill variations
+    skill_variations = {}
+    for skill_name, variations in skills_db.items():
+        for variation in variations:
+            skill_variations[variation.lower()] = skill_name
     
     matched = []
-    for skill in skills:
-        if skill in job_lower and skill in resume_lower:
-            skill_title = skill.title()
-            if is_valid_skill(skill_title):
-                matched.append(skill_title)
+    found_skills = set()
     
-    return matched[:10]
+    # Check each skill in database
+    for skill_name, variations in skills_db.items():
+        for variation in variations:
+            # Use word boundaries for accurate matching
+            pattern = r'\b' + re.escape(variation.lower()) + r'\b'
+            in_job = bool(re.search(pattern, job_lower, re.IGNORECASE))
+            in_resume = bool(re.search(pattern, resume_lower, re.IGNORECASE))
+            
+            if in_job and in_resume:
+                if skill_name not in found_skills:
+                    found_skills.add(skill_name)
+                    skill_title = skill_name.title()
+                    if is_valid_skill(skill_title):
+                        matched.append(skill_title)
+    
+    # Validate all matched skills
+    validated_matched = []
+    for skill in matched:
+        if is_valid_skill(skill):
+            validated_matched.append(skill)
+    
+    return validated_matched[:15]  # Return top 15 matched skills
 
 def generate_improvement_suggestions(resume_text: str, job_description: str, match_score: int, skill_comparison: Dict, section_validation: Dict = None) -> List[str]:
     """Generate actionable suggestions to improve resume match score to 100%"""
@@ -1064,15 +1348,34 @@ def get_skill_comparison(resume_text: str, job_description: str) -> Dict:
     match_percentage = (len(matched_skills) / len(job_skills) * 100) if job_skills else 0
     
     # Get missing skills (required in job description but NOT in resume)
-    # Compare job_skills with matched_skills to find what's missing
+    # Use case-insensitive comparison with skill database normalization
     missing_skills = []
+    matched_skills_lower = {ms.lower() for ms in matched_skills}
+    
+    # Get skills database for normalization
+    skills_db = get_comprehensive_skills_database()
+    skill_variations = {}
+    for skill_name, variations in skills_db.items():
+        for variation in variations:
+            skill_variations[variation.lower()] = skill_name
+    
     for job_skill in job_skills:
-        # Check if this job skill is NOT in matched_skills
-        if job_skill not in matched_skills:
-            # Also check case-insensitive match
-            job_skill_lower = job_skill.lower()
-            is_matched = any(ms.lower() == job_skill_lower for ms in matched_skills)
-            if not is_matched:
+        job_skill_lower = job_skill.lower()
+        # Normalize job skill to standard name if it's a variation
+        normalized_job_skill = skill_variations.get(job_skill_lower, job_skill_lower)
+        
+        # Check if this skill is matched (case-insensitive with normalization)
+        is_matched = False
+        for matched_skill in matched_skills:
+            matched_skill_lower = matched_skill.lower()
+            normalized_matched_skill = skill_variations.get(matched_skill_lower, matched_skill_lower)
+            if normalized_job_skill == normalized_matched_skill:
+                is_matched = True
+                break
+        
+        if not is_matched:
+            # Validate the missing skill before adding (prevents broken words)
+            if is_valid_skill(job_skill):
                 missing_skills.append(job_skill)
     
     # Remove duplicates while preserving order

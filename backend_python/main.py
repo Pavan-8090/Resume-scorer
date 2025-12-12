@@ -12,13 +12,16 @@ load_dotenv()
 app = FastAPI(title="ResumeScore API")
 
 # CORS middleware - Support both local and production
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,chrome-extension://").split(",")
+# Add Chrome extension origin pattern
+allowed_origins.append("chrome-extension://*")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in allowed_origins],
+    allow_origins=[origin.strip() for origin in allowed_origins if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_origin_regex=r"chrome-extension://.*",  # Allow all Chrome extensions
 )
 
 # Health check
@@ -164,6 +167,38 @@ async def rewrite_resume_endpoint(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to rewrite resume: {str(e)}")
+
+class TextResumeAnalysis(BaseModel):
+    resume_text: str
+    candidate_name: Optional[str] = "Unknown Candidate"
+    job_description: str
+
+@app.post("/api/resume/analyze-text")
+async def analyze_text_resume(analysis: TextResumeAnalysis):
+    """Analyze resume from text (for Chrome extension)"""
+    try:
+        from resume_analyzer import analyze_resume_file
+        
+        # Convert text to bytes (simulate file)
+        resume_text_bytes = analysis.resume_text.encode('utf-8')
+        file_name = f"{analysis.candidate_name.replace(' ', '_')}_resume.txt"
+        
+        # Use existing analysis function
+        result = await analyze_resume_file(
+            file_content=resume_text_bytes,
+            file_name=file_name,
+            job_description=analysis.job_description
+        )
+        
+        # Override candidate name if provided
+        if analysis.candidate_name and analysis.candidate_name != "Unknown Candidate":
+            result["candidateName"] = analysis.candidate_name
+        
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to analyze resume: {str(e)}")
 
 if __name__ == "__main__":
     import sys

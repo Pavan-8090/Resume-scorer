@@ -83,7 +83,7 @@ export default function ResumeChecker({ onAnalyze }: { onAnalyze: (jobId: string
       ).catch((err) => {
         console.error('Job creation error:', err);
         if (err.code === 'ECONNREFUSED') {
-          throw new Error(`Backend server not running. Please start backend with: cd backend && npm run dev`);
+          throw new Error(`Backend server not running. Please start backend with: cd backend_python && python main.py`);
         }
         throw err;
       });
@@ -118,7 +118,7 @@ export default function ResumeChecker({ onAnalyze }: { onAnalyze: (jobId: string
       let errorMessage = 'Error analyzing resume. ';
       
       if (err.code === 'ECONNREFUSED' || err.message?.includes('Network Error')) {
-        errorMessage += `Backend server not running. Please start it with: cd backend && npm run dev`;
+        errorMessage += `Backend server not running. Please start it with: cd backend_python && python main.py`;
       } else if (err.response?.data?.error) {
         errorMessage += err.response.data.error;
         if (err.response.data.details) {

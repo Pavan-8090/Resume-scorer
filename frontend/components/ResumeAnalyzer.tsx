@@ -1,21 +1,74 @@
 import { useState } from 'react';
-import { useRouter } from 'next/router';
-import axios from 'axios';
-import Cookies from 'js-cookie';
+import axios, { AxiosError } from 'axios';
 import { useDropzone } from 'react-dropzone';
 import BackendStatus from './BackendStatus';
+
+interface SkillComparison {
+  jobRequiredSkills?: string[];
+  resumeSkills?: string[];
+  matchedSkills?: string[];
+  missingSkills?: string[];
+  extraSkills?: string[];
+  matchPercentage?: number;
+}
+
+interface Analysis {
+  _id?: string;
+  id?: string;
+  candidateName: string;
+  matchScore: number;
+  strengths: string[];
+  weaknesses: string[];
+  skillMatches: string[];
+  allSkills?: string[];
+  skillComparison?: SkillComparison;
+  improvementSuggestions?: string[];
+  jobPostId?: string;
+}
+
+interface RewrittenResume {
+  fileName?: string;
+  originalResume?: string;
+  rewrittenResume?: string;
+  originalScore?: number;
+  rewrittenScore?: number;
+  scoreImprovement?: number;
+  docxBase64?: string;
+  pdfBase64?: string;
+  markdownText?: string;
+}
+
+interface LoadingProgress {
+  current: number;
+  total: number;
+  currentFile: string;
+}
+
+interface Statistics {
+  total: number;
+  avgScore: number;
+  maxScore: number;
+  minScore: number;
+  highScores: number;
+  mediumScores: number;
+  lowScores: number;
+}
 
 export default function ResumeAnalyzer() {
   const [jobDescription, setJobDescription] = useState('');
   const [jobDescriptionFile, setJobDescriptionFile] = useState<File | null>(null);
-  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [resumeFiles, setResumeFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState<LoadingProgress>({ current: 0, total: 0, currentFile: '' });
   const [error, setError] = useState('');
-  const [analysis, setAnalysis] = useState<any>(null);
+  const [analyses, setAnalyses] = useState<Analysis[]>([]);
+  const [selectedAnalysisIndex, setSelectedAnalysisIndex] = useState<number>(0);
   const [rewriting, setRewriting] = useState(false);
-  const [rewrittenResume, setRewrittenResume] = useState<any>(null);
+  const [rewrittenResume, setRewrittenResume] = useState<RewrittenResume | null>(null);
   const [showComparison, setShowComparison] = useState(false);
-  const router = useRouter();
+  const [viewMode, setViewMode] = useState<'detailed' | 'comparison' | 'cards'>('detailed');
+  const [sortBy, setSortBy] = useState<'score' | 'name'>('score');
+  const [filterScore, setFilterScore] = useState<number | null>(null);
 
   const { getRootProps: getJobDescRootProps, getInputProps: getJobDescInputProps } = useDropzone({
     accept: {
@@ -37,19 +90,35 @@ export default function ResumeAnalyzer() {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'application/msword': ['.doc'],
     },
-    maxFiles: 1,
+    maxFiles: 50, // Maximum 50 resumes at once
     onDrop: (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
-        setResumeFile(acceptedFiles[0]);
+        const currentCount = resumeFiles.length;
+        const remainingSlots = 50 - currentCount;
+        if (remainingSlots > 0) {
+          const filesToAdd = acceptedFiles.slice(0, remainingSlots);
+          setResumeFiles(prev => [...prev, ...filesToAdd]);
+          if (acceptedFiles.length > remainingSlots) {
+            setError(`Only ${remainingSlots} more file(s) can be added. Maximum 50 resumes allowed.`);
+            setTimeout(() => setError(''), 5000);
+          }
+        } else {
+          setError('Maximum 50 resumes allowed. Please remove some files first.');
+          setTimeout(() => setError(''), 5000);
+        }
       }
     },
   });
+
+  const removeResumeFile = (index: number) => {
+    setResumeFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    setAnalysis(null);
+    setAnalyses([]);
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -60,8 +129,8 @@ export default function ResumeAnalyzer() {
         return;
       }
 
-      if (!resumeFile) {
-        setError('Resume file is required');
+      if (resumeFiles.length === 0) {
+        setError('At least one resume file is required');
         setLoading(false);
         return;
       }
@@ -90,9 +159,11 @@ export default function ResumeAnalyzer() {
 
       const jobId = jobResponse.data._id || jobResponse.data.id;
 
-      // Upload resume for analysis
+      // Upload resumes for analysis
       const analysisFormData = new FormData();
-      analysisFormData.append('resumes', resumeFile);
+      resumeFiles.forEach((file) => {
+        analysisFormData.append('resumes', file);
+      });
 
       const analysisResponse = await axios.post(
         `${apiUrl}/api/jobs/${jobId}/analyze`,
@@ -101,23 +172,25 @@ export default function ResumeAnalyzer() {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
-          timeout: 180000, // 3 minutes for analysis
+          timeout: Math.min(180000 * resumeFiles.length, 3600000), // 3 minutes per resume, max 1 hour total
         }
       );
 
       if (analysisResponse.data.analyses && analysisResponse.data.analyses.length > 0) {
-        setAnalysis(analysisResponse.data.analyses[0]);
+        setAnalyses(analysisResponse.data.analyses);
+        setSelectedAnalysisIndex(0);
       }
-    } catch (err: any) {
-      console.error('Error details:', err);
+    } catch (err) {
+      const axiosError = err as AxiosError;
       let errorMessage = 'Error analyzing resume. ';
       
-      if (err.code === 'ECONNREFUSED' || err.message?.includes('Network Error')) {
-        errorMessage += `Backend server not running. Please start it with: cd backend_python && python main.py`;
-      } else if (err.response?.data?.error) {
-        errorMessage += err.response.data.error;
-      } else if (err.message) {
-        errorMessage += err.message;
+      if (axiosError.code === 'ECONNREFUSED' || axiosError.message?.includes('Network Error')) {
+        errorMessage += 'Backend server not running. Please start it with: cd backend_python && python main.py';
+      } else if (axiosError.response?.data) {
+        const errorData = axiosError.response.data as { error?: string; detail?: string };
+        errorMessage += errorData.error || errorData.detail || 'Unknown error occurred';
+      } else if (axiosError.message) {
+        errorMessage += axiosError.message;
       } else {
         errorMessage += 'Please check: 1) Backend is running, 2) File format is correct (PDF/DOCX)';
       }
@@ -137,8 +210,10 @@ export default function ResumeAnalyzer() {
     });
   };
 
-  const handleRewriteResume = async () => {
-    if (!resumeFile || !jobDescription) return;
+  const handleRewriteResume = async (analysisIndex?: number) => {
+    const index = analysisIndex !== undefined ? analysisIndex : selectedAnalysisIndex;
+    const currentAnalysis = analyses[index];
+    if (!currentAnalysis || resumeFiles.length === 0 || !jobDescription) return;
     
     setRewriting(true);
     setError('');
@@ -154,13 +229,16 @@ export default function ResumeAnalyzer() {
         jobDescriptionText = await readFileAsText(jobDescriptionFile);
       }
 
+      // Find the resume file that matches this analysis
+      const resumeFile = resumeFiles[index] || resumeFiles[0];
+
       // Create form data
       const formData = new FormData();
       formData.append('resume', resumeFile);
       formData.append('job_description', jobDescriptionText);
       // Pass original score if available
-      if (analysis && analysis.matchScore) {
-        formData.append('original_score', analysis.matchScore.toString());
+      if (currentAnalysis && currentAnalysis.matchScore) {
+        formData.append('original_score', currentAnalysis.matchScore.toString());
       }
 
       const response = await axios.post(
@@ -176,16 +254,17 @@ export default function ResumeAnalyzer() {
 
       setRewrittenResume(response.data);
       setShowComparison(true);
-    } catch (err: any) {
-      console.error('Error rewriting resume:', err);
+    } catch (err) {
+      const axiosError = err as AxiosError;
       let errorMessage = 'Error rewriting resume. ';
       
-      if (err.code === 'ECONNREFUSED' || err.message?.includes('Network Error')) {
-        errorMessage += `Backend server not running. Please start it with: cd backend_python && python main.py`;
-      } else if (err.response?.data?.detail) {
-        errorMessage += err.response.data.detail;
-      } else if (err.message) {
-        errorMessage += err.message;
+      if (axiosError.code === 'ECONNREFUSED' || axiosError.message?.includes('Network Error')) {
+        errorMessage += 'Backend server not running. Please start it with: cd backend_python && python main.py';
+      } else if (axiosError.response?.data) {
+        const errorData = axiosError.response.data as { detail?: string; error?: string };
+        errorMessage += errorData.detail || errorData.error || 'Unknown error occurred';
+      } else if (axiosError.message) {
+        errorMessage += axiosError.message;
       } else {
         errorMessage += 'Please check: 1) Backend is running, 2) AI service is configured (OPENAI_API_KEY or HF_TOKEN)';
       }
@@ -196,14 +275,19 @@ export default function ResumeAnalyzer() {
     }
   };
 
-  const downloadResume = (format: 'docx' | 'pdf' | 'txt' | 'md') => {
+  const downloadResume = (format: 'docx' | 'pdf' | 'txt') => {
     if (!rewrittenResume) return;
 
     const baseName = rewrittenResume.fileName || 'improved_resume';
 
     if (format === 'docx') {
+      if (!rewrittenResume.docxBase64) {
+        setError('DOCX file not available');
+        return;
+      }
       // Download DOCX
-      const byteCharacters = atob(rewrittenResume.docxBase64);
+      const docxBase64 = rewrittenResume.docxBase64;
+      const byteCharacters = atob(docxBase64);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
@@ -219,8 +303,13 @@ export default function ResumeAnalyzer() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } else if (format === 'pdf') {
+      if (!rewrittenResume.pdfBase64) {
+        setError('PDF file not available');
+        return;
+      }
       // Download PDF
-      const byteCharacters = atob(rewrittenResume.pdfBase64);
+      const pdfBase64 = rewrittenResume.pdfBase64;
+      const byteCharacters = atob(pdfBase64);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
@@ -236,8 +325,13 @@ export default function ResumeAnalyzer() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } else if (format === 'txt') {
+      if (!rewrittenResume.rewrittenResume) {
+        setError('Text content not available');
+        return;
+      }
       // Download TXT
-      const blob = new Blob([rewrittenResume.rewrittenResume], { type: 'text/plain' });
+      const textContent = rewrittenResume.rewrittenResume;
+      const blob = new Blob([textContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -246,25 +340,225 @@ export default function ResumeAnalyzer() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } else if (format === 'md') {
-      // Download Markdown
-      const markdownText = rewrittenResume.markdownText || rewrittenResume.rewrittenResume;
-      const blob = new Blob([markdownText], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${baseName}.md`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
     }
+  };
+
+  // Download Analysis Summary
+  const downloadAnalysisSummary = (analysis: Analysis, index?: number) => {
+    if (!analysis) return;
+    
+    const candidateName = analysis.candidateName || `Candidate ${index !== undefined ? index + 1 : ''}`;
+    const summary = `RESUME ANALYSIS SUMMARY
+${'='.repeat(50)}
+
+Candidate: ${candidateName}
+Match Score: ${analysis.matchScore}%
+Analysis Date: ${new Date().toLocaleDateString()}
+
+${'='.repeat(50)}
+OVERVIEW
+${'='.repeat(50)}
+
+Match Score: ${analysis.matchScore}%
+Status: ${analysis.matchScore >= 80 ? 'Excellent Match' : analysis.matchScore >= 60 ? 'Good Match' : 'Needs Improvement'}
+
+${'='.repeat(50)}
+TOP MATCHED SKILLS
+${'='.repeat(50)}
+
+${(analysis.skillMatches || []).slice(0, 10).map((skill: string, i: number) => `${i + 1}. ${skill}`).join('\n') || 'No matched skills found'}
+
+${'='.repeat(50)}
+ALL SKILLS IN RESUME
+${'='.repeat(50)}
+
+${(analysis.allSkills || []).join(', ') || 'No skills detected'}
+
+${'='.repeat(50)}
+STRENGTHS
+${'='.repeat(50)}
+
+${(analysis.strengths || []).map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || 'No strengths identified'}
+
+${'='.repeat(50)}
+AREAS TO IMPROVE
+${'='.repeat(50)}
+
+${(analysis.weaknesses || []).map((w: string, i: number) => `${i + 1}. ${w}`).join('\n') || 'No improvement areas identified'}
+
+${analysis.skillComparison?.missingSkills && analysis.skillComparison.missingSkills.length > 0 ? `
+${'='.repeat(50)}
+MISSING REQUIRED SKILLS
+${'='.repeat(50)}
+
+${analysis.skillComparison.missingSkills.slice(0, 10).map((skill: string, i: number) => `${i + 1}. ${skill}`).join('\n')}
+` : ''}
+
+${analysis.improvementSuggestions && analysis.improvementSuggestions.length > 0 ? `
+${'='.repeat(50)}
+IMPROVEMENT SUGGESTIONS
+${'='.repeat(50)}
+
+${analysis.improvementSuggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}
+` : ''}
+
+${'='.repeat(50)}
+END OF SUMMARY
+${'='.repeat(50)}
+`;
+
+    const blob = new Blob([summary], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `resume_summary_${candidateName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Download All Analyses Summary
+  const downloadAllSummaries = () => {
+    if (analyses.length === 0) return;
+    
+    const sortedAnalyses = getSortedAnalyses();
+    let allSummaries = `COMPLETE RESUME ANALYSIS REPORT
+${'='.repeat(60)}
+Generated: ${new Date().toLocaleString()}
+Total Resumes Analyzed: ${analyses.length}
+${'='.repeat(60)}
+
+${getStatistics() ? `
+OVERALL STATISTICS
+${'='.repeat(60)}
+Total Resumes: ${getStatistics()?.total}
+Average Score: ${getStatistics()?.avgScore}%
+Best Match: ${getStatistics()?.maxScore}%
+Lowest Score: ${getStatistics()?.minScore}%
+
+Score Distribution:
+- High (≥80%): ${getStatistics()?.highScores} resumes
+- Medium (60-79%): ${getStatistics()?.mediumScores} resumes
+- Low (<60%): ${getStatistics()?.lowScores} resumes
+
+${'='.repeat(60)}
+
+` : ''}`;
+
+    sortedAnalyses.forEach((analysis, index) => {
+      allSummaries += `\n\n${'='.repeat(60)}\n`;
+      allSummaries += `RESUME #${index + 1} - RANK: ${index + 1}\n`;
+      allSummaries += `${'='.repeat(60)}\n\n`;
+      
+      const candidateName = analysis.candidateName || `Candidate ${index + 1}`;
+      allSummaries += `Candidate: ${candidateName}\n`;
+      allSummaries += `Match Score: ${analysis.matchScore}%\n`;
+      allSummaries += `Status: ${analysis.matchScore >= 80 ? 'Excellent Match' : analysis.matchScore >= 60 ? 'Good Match' : 'Needs Improvement'}\n\n`;
+      
+      allSummaries += `Top Matched Skills:\n`;
+      allSummaries += `${(analysis.skillMatches || []).slice(0, 5).map((s: string, i: number) => `  ${i + 1}. ${s}`).join('\n') || '  None'}\n\n`;
+      
+      allSummaries += `Key Strengths:\n`;
+      allSummaries += `${(analysis.strengths || []).slice(0, 3).map((s: string, i: number) => `  ${i + 1}. ${s}`).join('\n') || '  None'}\n\n`;
+      
+      allSummaries += `Areas to Improve:\n`;
+      allSummaries += `${(analysis.weaknesses || []).slice(0, 3).map((w: string, i: number) => `  ${i + 1}. ${w}`).join('\n') || '  None'}\n`;
+    });
+
+    allSummaries += `\n\n${'='.repeat(60)}\nEND OF REPORT\n${'='.repeat(60)}`;
+
+    const blob = new Blob([allSummaries], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `all_resumes_summary_${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-green-600 bg-green-50 border-green-200';
     if (score >= 60) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
     return 'text-red-600 bg-red-50 border-red-200';
+  };
+
+  // Sort and filter analyses
+  const getSortedAnalyses = (): Analysis[] => {
+    let sorted = [...analyses];
+    
+    // Sort
+    if (sortBy === 'score') {
+      sorted.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+    } else {
+      sorted.sort((a, b) => {
+        const nameA = (a.candidateName || '').toLowerCase();
+        const nameB = (b.candidateName || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+    }
+    
+    // Filter
+    if (filterScore !== null) {
+      sorted = sorted.filter(a => (a.matchScore || 0) >= filterScore);
+    }
+    
+    return sorted;
+  };
+
+  // Calculate statistics
+  const getStatistics = (): Statistics | null => {
+    if (analyses.length === 0) return null;
+    
+    const scores = analyses.map(a => a.matchScore || 0);
+    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const maxScore = Math.max(...scores);
+    const minScore = Math.min(...scores);
+    const highScores = scores.filter(s => s >= 80).length;
+    const mediumScores = scores.filter(s => s >= 60 && s < 80).length;
+    const lowScores = scores.filter(s => s < 60).length;
+    
+    return {
+      total: analyses.length,
+      avgScore: Math.round(avgScore),
+      maxScore,
+      minScore,
+      highScores,
+      mediumScores,
+      lowScores,
+    };
+  };
+
+  // Export to CSV
+  const exportToCSV = () => {
+    if (analyses.length === 0) return;
+    
+    const headers = ['Rank', 'Candidate Name', 'Match Score', 'Matched Skills', 'Strengths', 'Weaknesses'];
+    const rows = getSortedAnalyses().map((analysis, index) => [
+      index + 1,
+      analysis.candidateName || 'Unknown',
+      `${analysis.matchScore}%`,
+      (analysis.skillMatches || []).slice(0, 5).join('; '),
+      (analysis.strengths || []).slice(0, 3).join('; '),
+      (analysis.weaknesses || []).slice(0, 3).join('; '),
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `resume_analysis_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -335,31 +629,56 @@ export default function ResumeAnalyzer() {
 
                 {/* Resume File Section */}
                 <div>
-                  <label className="block text-sm font-semibold text-navy-900 mb-3 flex items-center">
-                    <svg className="w-4 h-4 mr-2 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Resume File
+                  <label className="block text-sm font-semibold text-navy-900 mb-3 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <svg className="w-4 h-4 mr-2 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Resume Files {resumeFiles.length > 0 && `(${resumeFiles.length})`}
+                    </div>
+                    <span className="text-xs text-gray-500 font-normal">
+                      {resumeFiles.length}/50 max
+                    </span>
                   </label>
                   <div
                     {...getResumeRootProps()}
-                    className="border-2 border-dashed border-gray-300 rounded-xl p-8 cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-300 group hover-lift"
+                    className="border-2 border-dashed border-gray-300 rounded-xl p-6 cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-300 group hover-lift"
                   >
                     <input {...getResumeInputProps()} />
                     <div className="flex flex-col items-center text-center">
-                      {resumeFile ? (
-                        <>
-                          <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mb-4">
-                            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {resumeFiles.length > 0 ? (
+                        <div className="w-full">
+                          <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </div>
-                          <p className="text-sm font-semibold text-navy-900 mb-1 truncate max-w-full">{resumeFile.name}</p>
-                          <p className="text-xs text-gray-500">Click to change file</p>
-                          <div className="mt-3 px-4 py-2 bg-green-50 rounded-lg border border-green-200">
-                            <p className="text-xs text-green-700 font-medium">✓ File Ready</p>
+                          <p className="text-xs text-gray-500 mb-3">Click to add more files</p>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {resumeFiles.map((file, index) => (
+                              <div key={index} className="flex items-center justify-between bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-gray-100 transition-colors">
+                                <div className="flex items-center flex-1 min-w-0">
+                                  <svg className="w-4 h-4 text-gray-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  <p className="text-sm font-medium text-navy-900 truncate flex-1">{file.name}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeResumeFile(index);
+                                  }}
+                                  className="ml-2 p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        </>
+                        </div>
                       ) : (
                         <>
                           <div className="w-16 h-16 bg-gradient-to-br from-primary-100 to-primary-200 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -367,8 +686,8 @@ export default function ResumeAnalyzer() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
                           </div>
-                          <p className="text-sm font-semibold text-navy-900 mb-1">Drop Resume Here</p>
-                          <p className="text-xs text-gray-500 mb-2">or click to browse</p>
+                          <p className="text-sm font-semibold text-navy-900 mb-1">Drop Resumes Here</p>
+                          <p className="text-xs text-gray-500 mb-2">or click to browse (multiple files supported)</p>
                           <div className="flex items-center space-x-2 mt-3">
                             <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">PDF</span>
                             <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">DOCX</span>
@@ -394,7 +713,7 @@ export default function ResumeAnalyzer() {
                 {/* Analyze Button */}
                 <button
                   type="submit"
-                  disabled={loading || !resumeFile || (!jobDescription && !jobDescriptionFile)}
+                  disabled={loading || resumeFiles.length === 0 || (!jobDescription && !jobDescriptionFile)}
                   className="w-full bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:shadow-primary-500/30 transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2 relative overflow-hidden group"
                 >
                   {loading && (
@@ -429,29 +748,337 @@ export default function ResumeAnalyzer() {
                       <div className="w-8 h-8 bg-primary-500 rounded-full animate-pulse"></div>
                     </div>
                   </div>
-                  <h3 className="text-xl font-semibold text-navy-900 mb-2">Analyzing Resume with AI</h3>
-                  <p className="text-gray-500 text-center max-w-md">Our AI is processing your resume, extracting skills, and comparing them with the job description. This may take a moment...</p>
-                  <div className="mt-8 w-full max-w-md">
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full animate-shimmer" style={{ width: '60%' }}></div>
+                  <h3 className="text-xl font-semibold text-navy-900 mb-2">Analyzing Resume{resumeFiles.length > 1 ? 's' : ''} with AI</h3>
+                  <p className="text-gray-500 text-center max-w-md mb-4">
+                    {loadingProgress.total > 0 
+                      ? loadingProgress.currentFile 
+                      : `Our AI is processing ${resumeFiles.length} resume${resumeFiles.length > 1 ? 's' : ''}, extracting skills, and comparing them with the job description. This may take a moment...`}
+                  </p>
+                  {loadingProgress.total > 0 && (
+                    <div className="mb-4 text-center">
+                      <span className="text-sm font-semibold text-primary-600">
+                        {loadingProgress.current} of {loadingProgress.total} completed
+                      </span>
                     </div>
+                  )}
+                  <div className="mt-4 w-full max-w-md mx-auto">
+                    <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-300"
+                        style={{ 
+                          width: loadingProgress.total > 0 
+                            ? `${(loadingProgress.current / loadingProgress.total) * 100}%` 
+                            : '60%'
+                        }}
+                      />
+                    </div>
+                    {loadingProgress.total > 0 && (
+                      <div className="mt-2 text-center text-xs text-gray-500">
+                        {Math.round((loadingProgress.current / loadingProgress.total) * 100)}% complete
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-            ) : analysis ? (
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 animate-slide-in-right">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-200">
-                  <div>
-                    <h2 className="text-3xl font-bold text-navy-900 mb-2">Analysis Results</h2>
-                    <p className="text-gray-500">Candidate: <span className="font-semibold text-navy-700">{analysis.candidateName}</span></p>
+            ) : analyses.length > 0 ? (
+              <div className="space-y-6">
+                {/* Statistics Dashboard */}
+                {getStatistics() && (
+                  <div className="bg-gradient-to-br from-primary-50 via-blue-50 to-indigo-50 rounded-2xl shadow-xl border border-primary-200 p-6">
+                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                      <h3 className="text-xl font-bold text-navy-900">Overall Statistics</h3>
+                      <button
+                        onClick={exportToCSV}
+                        className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-lg transition-all flex items-center space-x-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span>Export CSV</span>
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-white rounded-xl p-4 border border-gray-200">
+                        <div className="text-2xl font-bold text-navy-900">{getStatistics()?.total}</div>
+                        <div className="text-xs text-gray-600 mt-1">Total Resumes</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 border border-gray-200">
+                        <div className="text-2xl font-bold text-primary-600">{getStatistics()?.avgScore}%</div>
+                        <div className="text-xs text-gray-600 mt-1">Average Score</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 border border-gray-200">
+                        <div className="text-2xl font-bold text-green-600">{getStatistics()?.maxScore}%</div>
+                        <div className="text-xs text-gray-600 mt-1">Best Match</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 border border-gray-200">
+                        <div className="text-2xl font-bold text-red-600">{getStatistics()?.minScore}%</div>
+                        <div className="text-xs text-gray-600 mt-1">Lowest Score</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 mt-4">
+                      <div className="bg-green-50 rounded-xl p-3 border border-green-200 text-center">
+                        <div className="text-lg font-bold text-green-700">{getStatistics()?.highScores}</div>
+                        <div className="text-xs text-green-600 mt-1">High (≥80%)</div>
+                      </div>
+                      <div className="bg-yellow-50 rounded-xl p-3 border border-yellow-200 text-center">
+                        <div className="text-lg font-bold text-yellow-700">{getStatistics()?.mediumScores}</div>
+                        <div className="text-xs text-yellow-600 mt-1">Medium (60-79%)</div>
+                      </div>
+                      <div className="bg-red-50 rounded-xl p-3 border border-red-200 text-center">
+                        <div className="text-lg font-bold text-red-700">{getStatistics()?.lowScores}</div>
+                        <div className="text-xs text-red-600 mt-1">Low (&lt;60%)</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl flex items-center justify-center shadow-lg">
-                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                )}
+
+                {/* View Mode & Controls */}
+                {analyses.length > 1 && (
+                  <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-semibold text-gray-600">View:</span>
+                        <button
+                          onClick={() => setViewMode('detailed')}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                            viewMode === 'detailed' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Detailed
+                        </button>
+                        <button
+                          onClick={() => setViewMode('comparison')}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                            viewMode === 'comparison' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Comparison
+                        </button>
+                        <button
+                          onClick={() => setViewMode('cards')}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                            viewMode === 'cards' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Cards
+                        </button>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as 'score' | 'name')}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        >
+                          <option value="score">Sort by Score</option>
+                          <option value="name">Sort by Name</option>
+                        </select>
+                        <select
+                          value={filterScore || ''}
+                          onChange={(e) => setFilterScore(e.target.value ? parseInt(e.target.value) : null)}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        >
+                          <option value="">All Scores</option>
+                          <option value="80">80%+</option>
+                          <option value="60">60%+</option>
+                          <option value="40">40%+</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Cards View */}
+                {viewMode === 'cards' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {getSortedAnalyses().map((analysis, index) => {
+                      const originalIndex = analyses.findIndex(a => a === analysis);
+                      return (
+                        <div
+                          key={originalIndex}
+                          className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 hover:shadow-xl transition-all cursor-pointer"
+                          onClick={() => {
+                            setViewMode('detailed');
+                            setSelectedAnalysisIndex(originalIndex);
+                          }}
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-navy-900 truncate">
+                                {analysis.candidateName || resumeFiles[originalIndex]?.name || `Resume ${originalIndex + 1}`}
+                              </h4>
+                              <p className="text-xs text-gray-500 truncate">{resumeFiles[originalIndex]?.name}</p>
+                            </div>
+                            <div className={`text-2xl font-bold ml-2 ${
+                              analysis.matchScore >= 80 ? 'text-green-600' :
+                              analysis.matchScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                            }`}>
+                              {analysis.matchScore}%
+                            </div>
+                          </div>
+                          <div className="mb-3">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className={`h-2 rounded-full ${
+                                  analysis.matchScore >= 80 ? 'bg-green-500' :
+                                  analysis.matchScore >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                                }`}
+                                style={{ width: `${analysis.matchScore}%` }}
+                              />
+                            </div>
+                          </div>
+                          {analysis.skillMatches && analysis.skillMatches.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {analysis.skillMatches.slice(0, 3).map((skill: string, idx: number) => (
+                                <span key={idx} className="px-2 py-0.5 bg-primary-100 text-primary-700 text-xs rounded">
+                                  {skill}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="text-xs text-gray-500 mt-2">Rank: #{index + 1}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Comparison View */}
+                {viewMode === 'comparison' && (
+                  <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b-2 border-gray-200">
+                          <th className="text-left py-3 px-4 font-semibold text-navy-900">Rank</th>
+                          <th className="text-left py-3 px-4 font-semibold text-navy-900">Candidate</th>
+                          <th className="text-center py-3 px-4 font-semibold text-navy-900">Score</th>
+                          <th className="text-left py-3 px-4 font-semibold text-navy-900">Top Skills</th>
+                          <th className="text-left py-3 px-4 font-semibold text-navy-900">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getSortedAnalyses().map((analysis, index) => {
+                          const originalIndex = analyses.findIndex(a => a === analysis);
+                          return (
+                            <tr
+                              key={originalIndex}
+                              className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
+                              onClick={() => {
+                                setViewMode('detailed');
+                                setSelectedAnalysisIndex(originalIndex);
+                              }}
+                            >
+                              <td className="py-3 px-4">
+                                <div className="flex items-center">
+                                  <span className="font-bold text-navy-900">#{index + 1}</span>
+                                  {index === 0 && (
+                                    <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded font-semibold">
+                                      Best
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4">
+                                <div>
+                                  <div className="font-medium text-navy-900">
+                                    {analysis.candidateName || 'Unknown'}
+                                  </div>
+                                  <div className="text-xs text-gray-500 truncate max-w-xs">
+                                    {resumeFiles[originalIndex]?.name}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <div className={`text-xl font-bold ${
+                                  analysis.matchScore >= 80 ? 'text-green-600' :
+                                  analysis.matchScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                                }`}>
+                                  {analysis.matchScore}%
+                                </div>
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="flex flex-wrap gap-1">
+                                  {(analysis.skillMatches || []).slice(0, 3).map((skill: string, idx: number) => (
+                                    <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">
+                                      {skill}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                  analysis.matchScore >= 80 ? 'bg-green-100 text-green-700' :
+                                  analysis.matchScore >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {analysis.matchScore >= 80 ? 'Excellent' :
+                                   analysis.matchScore >= 60 ? 'Good' : 'Needs Work'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Resume Selection Tabs (for detailed view) */}
+                {viewMode === 'detailed' && analyses.length > 1 && (
+                  <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-4">
+                    <div className="flex items-center space-x-2 overflow-x-auto">
+                      <span className="text-sm font-semibold text-gray-600 mr-2 whitespace-nowrap">Select Resume:</span>
+                      {getSortedAnalyses().map((analysis, index) => {
+                        const originalIndex = analyses.findIndex(a => a === analysis);
+                        return (
+                          <button
+                            key={originalIndex}
+                            onClick={() => setSelectedAnalysisIndex(originalIndex)}
+                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
+                              selectedAnalysisIndex === originalIndex
+                                ? 'bg-primary-600 text-white shadow-md'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            {analysis.candidateName || resumeFiles[originalIndex]?.name || `Resume ${originalIndex + 1}`}
+                            <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                              selectedAnalysisIndex === originalIndex
+                                ? 'bg-white/20 text-white'
+                                : 'bg-gray-200 text-gray-600'
+                            }`}>
+                              {analysis.matchScore}%
+                            </span>
+                            {index === 0 && (
+                              <span className="ml-1 text-xs">🏆</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Analysis Results - Detailed View */}
+                {viewMode === 'detailed' && analyses.map((analysis, analysisIndex) => {
+                  if (analysisIndex !== selectedAnalysisIndex) return null;
+                  return (
+                  <div
+                    key={analysisIndex}
+                    className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 animate-slide-in-right"
+                  >
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-200">
+                      <div>
+                        <h2 className="text-3xl font-bold text-navy-900 mb-2">Analysis Results</h2>
+                        <p className="text-gray-500">Candidate: <span className="font-semibold text-navy-700">{analysis.candidateName}</span></p>
+                        {resumeFiles[analysisIndex] && (
+                          <p className="text-xs text-gray-400 mt-1">File: {resumeFiles[analysisIndex].name}</p>
+                        )}
+                      </div>
+                      <div className="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl flex items-center justify-center shadow-lg">
+                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                    </div>
                 
                 {/* Score Card - Enhanced */}
                 <div className={`relative overflow-hidden rounded-2xl p-8 mb-8 border-2 transition-all duration-500 hover:scale-[1.01] ${
@@ -502,31 +1129,6 @@ export default function ResumeAnalyzer() {
                   </div>
                 </div>
 
-                {/* Matched Resume Button */}
-                <div className="mb-8">
-                  <button
-                    onClick={handleRewriteResume}
-                    disabled={rewriting || !resumeFile || !jobDescription}
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:shadow-purple-500/30 transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2 relative overflow-hidden group"
-                  >
-                    {rewriting && (
-                      <div className="absolute inset-0 animate-shimmer"></div>
-                    )}
-                    {rewriting ? (
-                      <>
-                        <div className="spinner w-5 h-5 border-2"></div>
-                        <span className="relative z-10">Generating Matched Resume...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="relative z-10">Get Matched Resume</span>
-                      </>
-                    )}
-                  </button>
-                </div>
 
                 {/* All Skills from Resume */}
                 {analysis.allSkills && analysis.allSkills.length > 0 && (
@@ -817,15 +1419,6 @@ export default function ResumeAnalyzer() {
                           </svg>
                           <span>TXT</span>
                         </button>
-                        <button
-                          onClick={() => downloadResume('md')}
-                          className="px-3 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white text-xs font-semibold rounded-lg transition-all duration-300 shadow-md hover:shadow-lg flex items-center space-x-1"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <span>MD</span>
-                        </button>
                       </div>
                     </div>
 
@@ -879,6 +1472,9 @@ export default function ResumeAnalyzer() {
                     </div>
                   </div>
                 )}
+                  </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-16 text-center animate-fade-in">
