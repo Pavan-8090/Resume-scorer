@@ -1,9 +1,28 @@
+import os
+import sys
+from pathlib import Path
+
+# Fix Python path to prevent conflicts with 'frontend' directory
+# PyMuPDF's fitz module conflicts with project's frontend directory
+backend_dir = Path(__file__).parent.absolute()
+parent_dir = backend_dir.parent
+
+# Change to backend directory first
+os.chdir(backend_dir)
+
+# Remove parent directory from sys.path if present to avoid frontend import conflict
+if str(parent_dir) in sys.path:
+    sys.path.remove(str(parent_dir))
+
+# Ensure backend_python is in the path
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
-import os
 from dotenv import load_dotenv
 from resume_analyzer import upload_model_to_hf
 

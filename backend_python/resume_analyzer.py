@@ -1,7 +1,18 @@
 import io
 import os
+import sys
 import json
+from pathlib import Path
 from typing import Dict, List
+
+# Fix import path before importing fitz to avoid conflict with 'frontend' directory
+backend_dir = Path(__file__).parent.absolute()
+parent_dir = backend_dir.parent
+if str(parent_dir) in sys.path:
+    sys.path.remove(str(parent_dir))
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 import fitz  # PyMuPDF
 import docx2txt
 from sentence_transformers import SentenceTransformer

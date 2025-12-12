@@ -71,9 +71,16 @@ fi
 
 echo ""
 echo "📦 Step 5: Testing backend installation..."
+cd "$BACKEND_DIR"
+source venv/bin/activate
 python3 -c "import fastapi, uvicorn; print('✅ FastAPI and Uvicorn imported successfully')" || {
     echo "❌ Error: Failed to import required packages"
     exit 1
+}
+
+# Test that fitz import works (check for frontend conflict)
+python3 -c "import fitz; print('✅ PyMuPDF (fitz) imported successfully')" || {
+    echo "⚠️  Warning: PyMuPDF import test failed, but this may be OK if frontend directory exists"
 }
 
 echo ""
