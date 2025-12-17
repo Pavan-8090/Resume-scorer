@@ -70,3 +70,6 @@ echo "  npm run dev"
 echo ""
 echo "Note: Make sure NEXT_PUBLIC_API_URL in .env.local points to your backend URL"
 echo ""
+
+
+

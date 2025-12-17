@@ -1504,6 +1504,210 @@ def generate_weaknesses(resume_text: str, job_description: str, match_score: flo
     # Return ONLY missing skills - NO generic messages like "Some skill gaps identified"
     return weaknesses
 
+async def analyze_with_perplexity(resume_text: str, job_description: str, candidate_name: str, parsed_data: Dict = None) -> Dict:
+    """Analyze resume using Perplexity API (sonar-deep-research or sonar-reasoning-pro)"""
+    if not OPENAI_AVAILABLE:
+        raise ValueError("OpenAI library not installed. Install with: pip install openai")
+    
+    perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
+    if not perplexity_api_key:
+        raise ValueError("PERPLEXITY_API_KEY not set. Cannot use Perplexity analysis.")
+    
+    # Use sonar-deep-research or sonar-reasoning-pro for better analysis
+    perplexity_model = os.getenv("PERPLEXITY_MODEL", "sonar-deep-research")
+    
+    # Perplexity uses OpenAI-compatible API
+    client = openai.OpenAI(
+        api_key=perplexity_api_key,
+        base_url="https://api.perplexity.ai"
+    )
+    
+    prompt = f"""You are an expert resume analyzer. Analyze the following resume against the job description and provide a comprehensive assessment.
+
+Job Description:
+{job_description[:2000]}
+
+Resume:
+{resume_text[:3000]}
+
+Provide a detailed analysis in JSON format with the following structure:
+{{
+  "matchScore": <number 0-100, representing overall match percentage>,
+  "candidateName": "{candidate_name}",
+  "strengths": ["strength1", "strength2", "strength3"],
+  "weaknesses": ["weakness1", "weakness2", "weakness3"],
+  "skillMatches": ["skill1", "skill2", "skill3", "skill4", "skill5"],
+  "allSkills": ["skill1", "skill2", "skill3", ...],
+  "skillComparison": {{
+    "jobRequiredSkills": ["skill1", "skill2", ...],
+    "resumeSkills": ["skill1", "skill2", ...],
+    "matchedSkills": ["skill1", "skill2", ...],
+    "missingSkills": ["skill1", "skill2", ...],
+    "extraSkills": ["skill1", "skill2", ...],
+    "matchPercentage": <number>,
+    "skillScores": [
+      {{"skill": "skill1", "score": 100, "status": "matched", "color": "#10B981"}},
+      ...
+    ]
+  }}
+}}
+
+Respond ONLY with valid JSON, no markdown, no code blocks, no explanations."""
+
+    try:
+        response = client.chat.completions.create(
+            model=perplexity_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a professional resume analyzer. Always respond with valid JSON only, no markdown formatting, no code blocks. Output pure JSON."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000
+        )
+        
+        if not response or not response.choices or len(response.choices) == 0:
+            raise ValueError("Empty response from Perplexity API")
+        
+        response_text = response.choices[0].message.content
+        if not response_text:
+            raise ValueError("Empty content in Perplexity API response")
+        
+        # Clean response
+        response_text = response_text.strip()
+        if response_text.startswith("```"):
+            response_text = response_text.replace("```json", "").replace("```", "").strip()
+        
+        # Try to extract JSON if wrapped in text
+        json_match = re.search(r'\{.*"matchScore"', response_text, re.DOTALL)
+        if json_match:
+            # Extract from start of JSON to end, handling truncated responses
+            start_pos = json_match.start()
+            response_text = response_text[start_pos:]
+            # Try to find complete JSON or extract what we can
+            # If JSON is truncated, try to fix common issues
+            if not response_text.strip().endswith('}'):
+                # Try to close incomplete JSON structures
+                open_braces = response_text.count('{') - response_text.count('}')
+                if open_braces > 0:
+                    # Find last complete object/array and close it
+                    last_complete = response_text.rfind('}')
+                    if last_complete > 0:
+                        response_text = response_text[:last_complete + 1]
+                    else:
+                        # Add closing braces
+                        response_text = response_text.rstrip() + '}' * open_braces
+        
+        # Parse JSON with better error handling
+        try:
+            analysis = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            # Try to extract partial JSON - at least get matchScore
+            print(f"JSON parsing error, attempting to extract partial data. Error: {str(e)}")
+            print(f"Response preview: {response_text[:300]}...")
+            
+            # Try to extract at least matchScore and basic fields
+            match_score_match = re.search(r'"matchScore"\s*:\s*(\d+)', response_text)
+            candidate_name_match = re.search(r'"candidateName"\s*:\s*"([^"]+)"', response_text)
+            strengths_match = re.search(r'"strengths"\s*:\s*\[(.*?)\]', response_text, re.DOTALL)
+            
+            if match_score_match:
+                # Create minimal analysis from extracted data
+                analysis = {
+                    "matchScore": int(match_score_match.group(1)),
+                    "candidateName": candidate_name_match.group(1) if candidate_name_match else candidate_name,
+                    "strengths": [],
+                    "weaknesses": [],
+                    "skillMatches": [],
+                    "allSkills": [],
+                    "skillComparison": {}
+                }
+                
+                # Try to extract strengths if available
+                if strengths_match:
+                    strengths_text = strengths_match.group(1)
+                    strengths = re.findall(r'"([^"]+)"', strengths_text)
+                    analysis["strengths"] = strengths[:3]
+                
+                print("Extracted partial analysis from truncated Perplexity response")
+            else:
+                raise ValueError(f"Invalid JSON response from Perplexity API and could not extract matchScore: {str(e)}")
+        
+        if not isinstance(analysis, dict):
+            raise ValueError("Perplexity API response is not a dictionary")
+        
+        # Ensure all required fields exist
+        ai_match_score = int(analysis.get("matchScore", 0))
+        skill_comparison = analysis.get("skillComparison", {})
+        
+        # If skillComparison is missing or incomplete, generate it
+        if not skill_comparison or not skill_comparison.get("missingSkills"):
+            skill_comparison = get_skill_comparison(resume_text, job_description)
+        
+        # Recalculate using modern scoring method for accuracy
+        if parsed_data is None:
+            parsed_data = {"name": candidate_name}
+        match_score = calculate_modern_match_score(resume_text, job_description, skill_comparison, parsed_data)
+        
+        # Use AI score as reference but prefer modern calculation
+        # If AI score is very different (>20 points), use average for better accuracy
+        if abs(ai_match_score - match_score) > 20:
+            match_score = int((ai_match_score * 0.3) + (match_score * 0.7))
+        
+        # Generate weaknesses based on missing skills from job description
+        missing_skills_list = skill_comparison.get("missingSkills", [])
+        raw_skill_matches = analysis.get("skillMatches", [])
+        filtered_skill_matches = [s for s in raw_skill_matches if is_valid_skill(str(s))][:5]
+        
+        # If no valid matched skills from AI, use skillComparison matched skills
+        if not filtered_skill_matches and skill_comparison.get("matchedSkills"):
+            filtered_skill_matches = [s for s in skill_comparison.get("matchedSkills", []) if is_valid_skill(str(s))][:5]
+        
+        # Generate weaknesses based on missing skills only
+        weaknesses = generate_weaknesses(resume_text, job_description, match_score, filtered_skill_matches, missing_skills_list)
+        
+        # Generate improvement suggestions if score < 100%
+        improvement_suggestions = analysis.get("improvementSuggestions", [])
+        if not improvement_suggestions and match_score < 100:
+            section_validation = skill_comparison.get("sectionValidation", {})
+            improvement_suggestions = generate_improvement_suggestions(
+                resume_text, job_description, match_score, skill_comparison, section_validation
+            )
+        
+        # Run advanced analyses
+        ats_analysis = check_ats_compatibility(resume_text, candidate_name + ".pdf")
+        action_verb_analysis = analyze_action_verbs(resume_text)
+        keyword_analysis = analyze_keyword_density(resume_text, job_description)
+        achievements_analysis = extract_quantifiable_achievements(resume_text)
+        length_structure_analysis = analyze_resume_length_structure(resume_text)
+        
+        result = {
+            "candidateName": analysis.get("candidateName", candidate_name),
+            "matchScore": match_score,
+            "strengths": analysis.get("strengths", [])[:3],
+            "weaknesses": weaknesses[:5],  # Use generated weaknesses based on missing skills
+            "skillMatches": filtered_skill_matches,
+            "allSkills": [s for s in analysis.get("allSkills", []) if is_valid_skill(str(s))][:10],
+            "improvementSuggestions": improvement_suggestions,
+            "skillComparison": skill_comparison,
+            "advancedAnalysis": {
+                "atsCompatibility": ats_analysis,
+                "actionVerbs": action_verb_analysis,
+                "keywordDensity": keyword_analysis,
+                "quantifiableAchievements": achievements_analysis,
+                "lengthStructure": length_structure_analysis
+            }
+        }
+        
+        print(f"Perplexity AI Analysis Complete - Match Score: {result['matchScore']}%")
+        return result
+        
+    except Exception as e:
+        print(f"Perplexity API Error: {e}")
+        raise
+
 async def analyze_with_openai(resume_text: str, job_description: str, candidate_name: str, parsed_data: Dict = None) -> Dict:
     """Analyze resume using OpenAI GPT-4 API (Pure AI)"""
     if not OPENAI_AVAILABLE:
@@ -1910,13 +2114,23 @@ async def analyze_resume_file(
     achievements_analysis = extract_quantifiable_achievements(resume_text)
     length_structure_analysis = analyze_resume_length_structure(resume_text)
     
-    # Try AI analysis - OpenAI first, then Hugging Face, then semantic similarity (AI-based)
+    # Try AI analysis - Perplexity first (recommended), then OpenAI, then Hugging Face, then semantic similarity (AI-based)
     use_ai_only = os.getenv("USE_AI_ONLY", "true").lower() == "true"
     
     if use_ai_only:
         print("Using AI-only analysis mode...")
         
-        # Try OpenAI first
+        # Try Perplexity first (recommended for better analysis)
+        perplexity_key = os.getenv("PERPLEXITY_API_KEY")
+        if perplexity_key and perplexity_key != "your-perplexity-api-key-here":
+            try:
+                print("Attempting Perplexity API analysis...")
+                return await analyze_with_perplexity(resume_text, job_description, candidate_name, parsed_data)
+            except Exception as e:
+                print(f"Perplexity analysis failed: {e}")
+                print("Falling back to OpenAI...")
+        
+        # Try OpenAI second
         openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key and openai_key != "your-openai-api-key-here":
             try:
@@ -1942,7 +2156,7 @@ async def analyze_resume_file(
             return await analyze_with_semantic_similarity(resume_text, job_description, candidate_name)
         except Exception as e:
             print(f"Semantic similarity analysis failed: {e}")
-            raise ValueError("All AI analysis methods failed. Please check: 1) OPENAI_API_KEY, 2) HF_TOKEN, 3) SentenceTransformer model installation.")
+            raise ValueError("All AI analysis methods failed. Please check: 1) PERPLEXITY_API_KEY, 2) OPENAI_API_KEY, 3) HF_TOKEN, 4) SentenceTransformer model installation.")
     
     # Fallback to old hybrid method if AI is disabled
     print("Using hybrid analysis (AI + Python)...")
@@ -2099,7 +2313,31 @@ Please provide a fully rewritten, improved resume that:
 
 Output the complete rewritten resume:"""
 
-    # Try OpenAI first
+    # Try Perplexity first (recommended)
+    perplexity_key = os.getenv("PERPLEXITY_API_KEY")
+    if perplexity_key and perplexity_key != "your-perplexity-api-key-here" and OPENAI_AVAILABLE:
+        try:
+            perplexity_model = os.getenv("PERPLEXITY_MODEL", "sonar-reasoning-pro")
+            client = openai.OpenAI(
+                api_key=perplexity_key,
+                base_url="https://api.perplexity.ai"
+            )
+            response = client.chat.completions.create(
+                model=perplexity_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=3000
+            )
+            rewritten = response.choices[0].message.content.strip()
+            print("SUCCESS: Resume rewritten using Perplexity API")
+            return rewritten
+        except Exception as e:
+            print(f"Perplexity rewrite failed: {e}, trying OpenAI...")
+    
+    # Try OpenAI second
     openai_key = os.getenv("OPENAI_API_KEY")
     if openai_key and openai_key != "your-openai-api-key-here" and OPENAI_AVAILABLE:
         try:
@@ -2148,9 +2386,9 @@ Output the complete rewritten resume:"""
                 raise Exception("Unexpected response format from Hugging Face")
         except Exception as e:
             print(f"Hugging Face rewrite failed: {e}")
-            raise Exception("AI resume rewriting failed. Please check OPENAI_API_KEY or HF_TOKEN configuration.")
+            raise Exception("AI resume rewriting failed. Please check PERPLEXITY_API_KEY, OPENAI_API_KEY, or HF_TOKEN configuration.")
     
-    raise Exception("No AI service available. Please configure OPENAI_API_KEY or HF_TOKEN.")
+    raise Exception("No AI service available. Please configure PERPLEXITY_API_KEY, OPENAI_API_KEY, or HF_TOKEN.")
 
 def create_docx_from_text(text: str, filename: str = "improved_resume.docx") -> bytes:
     """Create a professionally formatted DOCX file from text"""

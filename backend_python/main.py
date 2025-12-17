@@ -138,7 +138,7 @@ async def analyze_resume(
         if errors:
             error_detail += f"Errors: {'; '.join(errors[:3])}"
         else:
-            error_detail += "Please check: 1) Resume file format (PDF/DOCX), 2) AI service configuration (HF_TOKEN or OPENAI_API_KEY)"
+            error_detail += "Please check: 1) Resume file format (PDF/DOCX), 2) AI service configuration (PERPLEXITY_API_KEY, OPENAI_API_KEY, or HF_TOKEN)"
         raise HTTPException(status_code=400, detail=error_detail)
     
     jobs_db[job_id]["status"] = "completed"

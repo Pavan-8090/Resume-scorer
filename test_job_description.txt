@@ -1,0 +1,46 @@
+Job Title: Senior Full Stack Developer
+
+Company: TechInnovate Solutions
+
+Job Description:
+
+We are seeking an experienced Senior Full Stack Developer to join our dynamic team. The ideal candidate will have strong expertise in modern web development technologies and a passion for building scalable, high-performance applications.
+
+Key Responsibilities:
+- Design and develop full-stack web applications using React, Node.js, and Python
+- Build RESTful APIs and microservices architecture
+- Work with databases including PostgreSQL and MongoDB
+- Implement CI/CD pipelines and DevOps best practices
+- Collaborate with cross-functional teams including designers, product managers, and other engineers
+- Write clean, maintainable code and conduct code reviews
+- Optimize application performance and scalability
+- Mentor junior developers and contribute to team knowledge sharing
+
+Required Skills:
+- 5+ years of experience in full-stack development
+- Strong proficiency in Python and JavaScript/TypeScript
+- Experience with React and modern frontend frameworks
+- Backend development experience with Node.js, Express, or FastAPI
+- Database design and optimization (PostgreSQL, MongoDB)
+- Cloud platform experience (AWS preferred)
+- Docker and containerization
+- Git version control
+- RESTful API design and development
+- Strong problem-solving and debugging skills
+- Excellent communication and teamwork abilities
+
+Preferred Qualifications:
+- Experience with Kubernetes
+- CI/CD pipeline implementation
+- Microservices architecture
+- Agile/Scrum methodology
+- Mentoring experience
+- AWS certifications
+
+What We Offer:
+- Competitive salary and benefits
+- Remote work flexibility
+- Professional development opportunities
+- Collaborative and innovative work environment
+
+
