@@ -232,3 +232,6 @@ echo ""
 echo -e "${GREEN}All done! Your ResumeChecker is now running.${NC}"
 
 
+
+
+

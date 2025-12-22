@@ -77,7 +77,16 @@ async def analyze_resume(job_id: str, resumes: List[UploadFile] = File(...)):
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job post not found")
     
+    if not resumes or len(resumes) == 0:
+        raise HTTPException(status_code=400, detail="At least one resume file is required")
+    
+    if len(resumes) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 resumes allowed per request")
+    
     job_description = jobs_db[job_id]["jobDescription"]
+    if not job_description or len(job_description.strip()) < 10:
+        raise HTTPException(status_code=400, detail="Job description is invalid or too short")
+    
     results = []
     errors = []
     
@@ -85,6 +94,19 @@ async def analyze_resume(job_id: str, resumes: List[UploadFile] = File(...)):
         try:
             file_content = await resume_file.read()
             file_name = resume_file.filename or "unknown"
+            
+            # Validate file size (10MB limit)
+            MAX_FILE_SIZE = 10 * 1024 * 1024
+            if len(file_content) > MAX_FILE_SIZE:
+                errors.append(f"{file_name}: File too large (max 10MB)")
+                continue
+            
+            # Validate file extension
+            valid_extensions = {'.pdf', '.docx', '.doc', '.txt'}
+            file_ext = '.' + file_name.lower().split('.')[-1] if '.' in file_name else ''
+            if file_ext not in valid_extensions:
+                errors.append(f"{file_name}: Invalid file type. Use PDF, DOCX, DOC, or TXT")
+                continue
             
             print(f"Processing resume: {file_name}")
             analysis = await analyze_resume_file(

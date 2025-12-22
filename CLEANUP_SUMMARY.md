@@ -54,3 +54,6 @@
 - Skill matching and scoring
 - All core functionality intact
 
+
+
+

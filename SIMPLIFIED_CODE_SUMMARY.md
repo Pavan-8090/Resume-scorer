@@ -64,3 +64,6 @@ If Perplexity fails → Falls back to simple Python analysis.
 ✅ **Good analysis quality**
 ✅ **Uses Perplexity API + Python fallback**
 
+
+
+

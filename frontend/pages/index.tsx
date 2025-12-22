@@ -5,13 +5,10 @@ import Navbar from '../components/Navbar';
 import ResumeAnalyzer from '../components/ResumeAnalyzer';
 
 export default function Home() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [stats, setStats] = useState({ analyzed: 0, timeSaved: 0, accuracy: 0 });
 
   useEffect(() => {
-    const token = typeof document !== 'undefined' ? document.cookie.split(';').find(c => c.trim().startsWith('token=')) : null;
-    setIsAuthenticated(!!token);
     setIsMounted(true);
 
     // Animate stats counter

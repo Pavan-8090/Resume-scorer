@@ -42,3 +42,6 @@
 - Target: ~800-1000 lines (60% reduction)
 - Focus: Pure resume analysis only
 
+
+
+

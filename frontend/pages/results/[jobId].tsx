@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
-import Cookies from 'js-cookie';
 import Navbar from '../../components/Navbar';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -44,13 +43,9 @@ export default function Results() {
 
   const fetchResults = async () => {
     try {
-      const token = Cookies.get('token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      
       const [analysesResponse, jobResponse] = await Promise.all([
         axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/jobs/${jobId}/analyses`,
-          { headers }
+          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/jobs/${jobId}/analyses`
         ).catch(() => ({ data: [] })),
         axios.get(
           `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/jobs/${jobId}`,

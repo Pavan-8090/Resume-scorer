@@ -1,153 +1,115 @@
 # Docker Deployment Guide
 
-## Prerequisites
-- Docker Desktop installed (for local testing)
-- Docker and Docker Compose installed on VPS (for production)
-- Environment variables configured
+## Quick Start
 
-## Quick Start (Local Testing)
-
-1. **Create `.env` file** (copy from `.env.example`):
-   ```bash
-   cp .env.example .env
-   ```
-
-2. **Edit `.env` file** with your actual values:
-   ```env
-   PERPLEXITY_API_KEY=your_perplexity_key
-   PERPLEXITY_MODEL=sonar-deep-research
-   HF_TOKEN=your_actual_token
-   OPENAI_API_KEY=your_actual_key
-   ALLOWED_ORIGINS=http://localhost:3000
-   NEXT_PUBLIC_API_URL=http://localhost:5000
-   ```
-
-3. **Build and start containers**:
-   ```bash
-   docker-compose up --build
-   ```
-
-4. **Access the application**:
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:5000
-   - Health check: http://localhost:5000/health
-
-## Production Deployment on Ubuntu VPS
-
-### 1. Install Docker on Ubuntu VPS
+### 1. Build Docker Images
 
 ```bash
-# Update system
-sudo apt update
+# Build both backend and frontend images
+docker-compose build
 
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-
-# Install Docker Compose
-sudo apt install docker-compose-plugin -y
-
-# Add user to docker group (optional, to run without sudo)
-sudo usermod -aG docker $USER
-newgrp docker
+# Or build individually
+docker-compose build backend
+docker-compose build frontend
 ```
 
-### 2. Upload Project to VPS
+### 2. Set Environment Variables
 
-```bash
-# On your local machine
-scp -r ResumeChecker user@your-vps-ip:/home/user/
+Create a `.env` file in the root directory:
 
-# Or use git
-git clone your-repo-url
-cd ResumeChecker
-```
-
-### 3. Configure Environment Variables
-
-```bash
-cd /home/user/ResumeChecker
-cp .env.example .env
-nano .env  # Edit with your actual values
-```
-
-**Important production values:**
 ```env
-PERPLEXITY_API_KEY=your_perplexity_key
+# Perplexity API (Primary)
+PERPLEXITY_API_KEY=your-perplexity-api-key-here
 PERPLEXITY_MODEL=sonar-deep-research
-HF_TOKEN=your_huggingface_token
-OPENAI_API_KEY=your_openai_key
-ALLOWED_ORIGINS=https://your-domain.com,https://www.your-domain.com
-NEXT_PUBLIC_API_URL=https://api.your-domain.com
+
+# OpenAI API (Fallback)
+OPENAI_API_KEY=your-openai-api-key-here
+OPENAI_MODEL=gpt-4
+
+# Hugging Face (Optional Fallback)
+HF_TOKEN=your-huggingface-token-here
+HF_MODEL_ID=all-MiniLM-L6-v2
+
+# API Configuration
+NEXT_PUBLIC_API_URL=http://localhost:5000
+ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
-### 4. Build and Deploy
+### 3. Run with Docker Compose
 
 ```bash
-# Build images
-docker-compose -f docker-compose.prod.yml build
-
-# Start services
-docker-compose -f docker-compose.prod.yml up -d
-
-# Check status
-docker-compose -f docker-compose.prod.yml ps
+# Start all services
+docker-compose up -d
 
 # View logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose logs -f
+
+# Stop services
+docker-compose down
 ```
 
-### 5. Setup Nginx Reverse Proxy (Optional but Recommended)
+### 4. Access the Application
 
-Create `/etc/nginx/sites-available/resumescore`:
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000
+- **Health Check**: http://localhost:5000/health
 
-```nginx
-# Backend API
-server {
-    listen 80;
-    server_name api.your-domain.com;
+## Individual Docker Images
 
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-# Frontend
-server {
-    listen 80;
-    server_name your-domain.com www.your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Enable and restart:
-```bash
-sudo ln -s /etc/nginx/sites-available/resumescore /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
-### 6. Setup SSL with Let's Encrypt
+### Build Backend Image
 
 ```bash
-sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d your-domain.com -d www.your-domain.com -d api.your-domain.com
+cd backend_python
+docker build -t resumescore-backend:latest .
 ```
 
-## Docker Commands
+### Build Frontend Image
+
+```bash
+cd frontend
+docker build -t resumescore-frontend:latest --build-arg NEXT_PUBLIC_API_URL=http://localhost:5000 .
+```
+
+### Run Backend Container
+
+```bash
+docker run -d \
+  --name resumescore-backend \
+  -p 5000:5000 \
+  -e PERPLEXITY_API_KEY=your-key \
+  -e OPENAI_API_KEY=your-key \
+  resumescore-backend:latest
+```
+
+### Run Frontend Container
+
+```bash
+docker run -d \
+  --name resumescore-frontend \
+  -p 3000:3000 \
+  -e NEXT_PUBLIC_API_URL=http://localhost:5000 \
+  resumescore-frontend:latest
+```
+
+## Production Deployment
+
+For production, use `docker-compose.prod.yml`:
+
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+## Troubleshooting
+
+### Check Container Status
+
+```bash
+docker ps
+docker-compose ps
+```
 
 ### View Logs
+
 ```bash
 # All services
 docker-compose logs -f
@@ -157,104 +119,26 @@ docker-compose logs -f backend
 docker-compose logs -f frontend
 ```
 
-### Stop Services
+### Rebuild After Code Changes
+
 ```bash
-docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
 ```
 
-### Restart Services
+### Remove All Containers and Volumes
+
 ```bash
-docker-compose restart
+docker-compose down -v
 ```
 
-### Update and Redeploy
-```bash
-# Pull latest code
-git pull
+## Image Sizes
 
-# Rebuild and restart
-docker-compose up -d --build
-```
+- **Backend**: ~2-3 GB (includes ML dependencies)
+- **Frontend**: ~200-300 MB
 
-### Remove Everything
-```bash
-docker-compose down -v  # Removes volumes too
-```
+## Health Checks
 
-## Troubleshooting
-
-### Backend not starting
-```bash
-# Check logs
-docker-compose logs backend
-
-# Check if port is in use
-sudo netstat -tulpn | grep 5000
-```
-
-### Frontend build fails
-```bash
-# Check Node.js version
-docker-compose run frontend node --version
-
-# Rebuild without cache
-docker-compose build --no-cache frontend
-```
-
-### Permission issues
-```bash
-# Fix ownership
-sudo chown -R $USER:$USER .
-
-# Fix Docker permissions
-sudo chmod 666 /var/run/docker.sock
-```
-
-### Out of disk space
-```bash
-# Clean up Docker
-docker system prune -a
-docker volume prune
-```
-
-## Production Checklist
-
-- [ ] Environment variables set in `.env`
-- [ ] Docker and Docker Compose installed
-- [ ] Containers running: `docker-compose ps`
-- [ ] Backend health check: `curl http://localhost:5000/health`
-- [ ] Frontend accessible: `curl http://localhost:3000`
-- [ ] Nginx configured (if using)
-- [ ] SSL certificates installed (if using)
-- [ ] Firewall ports open (5000, 3000, 80, 443)
-- [ ] Auto-restart on reboot configured
-
-## Auto-start on Reboot
-
-Create systemd service `/etc/systemd/system/resumescore.service`:
-
-```ini
-[Unit]
-Description=ResumeChecker Docker Compose
-Requires=docker.service
-After=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=/home/user/ResumeChecker
-ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d
-ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
-TimeoutStartSec=0
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable:
-```bash
-sudo systemctl enable resumescore
-sudo systemctl start resumescore
-```
-
-
+Both services include health checks:
+- Backend: `curl http://localhost:5000/health`
+- Frontend: Check if port 3000 is accessible

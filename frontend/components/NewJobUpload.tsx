@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
-import Cookies from 'js-cookie';
 import { useDropzone } from 'react-dropzone';
 
 export default function NewJobUpload({ onSuccess }: { onSuccess: () => void }) {
@@ -43,8 +42,6 @@ export default function NewJobUpload({ onSuccess }: { onSuccess: () => void }) {
     setLoading(true);
 
     try {
-      const token = Cookies.get('token');
-      const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
       const formData = new FormData();
 
       if (!title) {
@@ -74,8 +71,7 @@ export default function NewJobUpload({ onSuccess }: { onSuccess: () => void }) {
 
       const jobResponse = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/jobs`,
-        { title, jobDescription: jobDescriptionText },
-        { headers }
+        { title, jobDescription: jobDescriptionText }
       );
 
       const jobId = jobResponse.data._id || jobResponse.data.id;
@@ -91,7 +87,6 @@ export default function NewJobUpload({ onSuccess }: { onSuccess: () => void }) {
         analysisFormData,
         {
           headers: {
-            ...headers,
             'Content-Type': 'multipart/form-data',
           },
           timeout: 180000, // 3 minutes for analysis

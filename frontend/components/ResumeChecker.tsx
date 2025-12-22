@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
-import Cookies from 'js-cookie';
 import { useDropzone } from 'react-dropzone';
 import BackendStatus from './BackendStatus';
 
@@ -44,8 +43,6 @@ export default function ResumeChecker({ onAnalyze }: { onAnalyze: (jobId: string
     setLoading(true);
 
     try {
-      const token = Cookies.get('token');
-      const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
       if (!jobDescription && !jobDescriptionFile) {

@@ -6,6 +6,7 @@ import os
 import json
 import re
 import io
+import asyncio
 from typing import Dict, List
 from dotenv import load_dotenv
 
@@ -39,7 +40,8 @@ def get_embedder():
     if _embedder is None and SENTENCE_TRANSFORMER_AVAILABLE:
         try:
             _embedder = SentenceTransformer('all-MiniLM-L6-v2')
-        except:
+        except Exception as e:
+            print(f"Warning: Could not load SentenceTransformer: {e}")
             _embedder = None
     return _embedder
 
@@ -62,16 +64,27 @@ def extract_text_from_docx(file_content: bytes) -> str:
 
 def extract_resume_text(file_content: bytes, file_name: str) -> str:
     """Extract text from resume file"""
+    if not file_content or len(file_content) == 0:
+        raise ValueError("File content is empty")
+    
+    # Limit file size to 10MB
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+    if len(file_content) > MAX_FILE_SIZE:
+        raise ValueError(f"File too large. Maximum size is {MAX_FILE_SIZE / (1024*1024):.1f}MB")
+    
     ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
     
-    if ext == 'txt':
-        return file_content.decode('utf-8', errors='ignore')
-    elif ext == 'pdf':
-        return extract_text_from_pdf(file_content)
-    elif ext in ['docx', 'doc']:
-        return extract_text_from_docx(file_content)
-    else:
-        return file_content.decode('utf-8', errors='ignore')
+    try:
+        if ext == 'txt':
+            return file_content.decode('utf-8', errors='ignore')
+        elif ext == 'pdf':
+            return extract_text_from_pdf(file_content)
+        elif ext in ['docx', 'doc']:
+            return extract_text_from_docx(file_content)
+        else:
+            return file_content.decode('utf-8', errors='ignore')
+    except Exception as e:
+        raise ValueError(f"Failed to extract text from file: {str(e)}")
 
 # ============================================================================
 # SKILL EXTRACTION (Simple Python-based)
@@ -140,7 +153,8 @@ def calculate_semantic_similarity(text1: str, text2: str) -> float:
         embeddings = embedder.encode([t1, t2])
         similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
         return float(similarity)
-    except:
+    except Exception as e:
+        print(f"Warning: Semantic similarity calculation failed: {e}")
         return 0.5
 
 # ============================================================================
@@ -207,17 +221,31 @@ Return JSON:
 }}"""
 
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a resume analyzer. Return valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=1500
+        # Use asyncio to add timeout to synchronous OpenAI call
+        loop = asyncio.get_event_loop()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "You are a resume analyzer. Return valid JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=1500
+                )
+            ),
+            timeout=60.0  # 60 second timeout
         )
         
+        if not response or not response.choices or len(response.choices) == 0:
+            raise ValueError("Empty response from Perplexity API")
+        
         response_text = response.choices[0].message.content.strip()
+        
+        if not response_text:
+            raise ValueError("Empty content in Perplexity API response")
         
         # Clean JSON
         if response_text.startswith("```"):
@@ -259,9 +287,10 @@ Return JSON:
             "skillComparison": skill_comparison
         }
         
-    except json.JSONDecodeError:
-        # If JSON parsing fails, use Python analysis
-        raise ValueError("Perplexity returned invalid JSON, using Python fallback")
+    except asyncio.TimeoutError:
+        raise ValueError("Perplexity API request timed out after 60 seconds")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Perplexity returned invalid JSON: {str(e)}")
     except Exception as e:
         raise ValueError(f"Perplexity API error: {str(e)}")
 
@@ -305,14 +334,22 @@ def analyze_with_python(resume_text: str, job_description: str, candidate_name: 
 
 async def analyze_resume_file(file_content: bytes, file_name: str, job_description: str) -> Dict:
     """Main function: Analyze resume file"""
+    # Validate inputs
+    if not file_content:
+        raise ValueError("File content is required")
+    if not job_description or len(job_description.strip()) < 10:
+        raise ValueError("Job description must be at least 10 characters")
+    
     # Extract text
     resume_text = extract_resume_text(file_content, file_name)
     
     if not resume_text or len(resume_text.strip()) < 50:
-        raise ValueError("Could not extract sufficient text from resume")
+        raise ValueError("Could not extract sufficient text from resume (minimum 50 characters required)")
     
-    # Get candidate name from filename
-    candidate_name = file_name.replace('.pdf', '').replace('.docx', '').replace('.doc', '').replace('.txt', '') or "Unknown"
+    # Get candidate name from filename (clean it up)
+    candidate_name = file_name.replace('.pdf', '').replace('.docx', '').replace('.doc', '').replace('.txt', '').strip()
+    if not candidate_name:
+        candidate_name = "Unknown Candidate"
     
     # Try Perplexity API first
     perplexity_key = os.getenv("PERPLEXITY_API_KEY")

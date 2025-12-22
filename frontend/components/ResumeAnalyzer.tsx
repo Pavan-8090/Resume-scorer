@@ -27,12 +27,6 @@ interface Analysis {
 }
 
 
-interface LoadingProgress {
-  current: number;
-  total: number;
-  currentFile: string;
-}
-
 interface Statistics {
   total: number;
   avgScore: number;
@@ -48,7 +42,6 @@ export default function ResumeAnalyzer() {
   const [jobDescriptionFile, setJobDescriptionFile] = useState<File | null>(null);
   const [resumeFiles, setResumeFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState<LoadingProgress>({ current: 0, total: 0, currentFile: '' });
   const [error, setError] = useState('');
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [selectedAnalysisIndex, setSelectedAnalysisIndex] = useState<number>(0);
@@ -121,9 +114,18 @@ export default function ResumeAnalyzer() {
         return;
       }
 
+      // Validate file sizes (10MB limit)
+      const MAX_FILE_SIZE = 10 * 1024 * 1024;
+      const oversizedFiles = resumeFiles.filter(f => f.size > MAX_FILE_SIZE);
+      if (oversizedFiles.length > 0) {
+        setError(`File(s) too large (max 10MB): ${oversizedFiles.map(f => f.name).join(', ')}`);
+        setLoading(false);
+        return;
+      }
+
       // Test backend connection
       try {
-        await axios.get(`${apiUrl}/health`, { timeout: 100000000000 });
+        await axios.get(`${apiUrl}/health`, { timeout: 5000 });
       } catch (healthError) {
         setError(`Cannot connect to backend server. Make sure backend is running on ${apiUrl}`);
         setLoading(false);
@@ -604,33 +606,15 @@ ${'='.repeat(60)}
                   </div>
                   <h3 className="text-xl font-semibold text-navy-900 mb-2">Analyzing Resume{resumeFiles.length > 1 ? 's' : ''} with AI</h3>
                   <p className="text-gray-500 text-center max-w-md mb-4">
-                    {loadingProgress.total > 0 
-                      ? loadingProgress.currentFile 
-                      : `Our AI is processing ${resumeFiles.length} resume${resumeFiles.length > 1 ? 's' : ''}, extracting skills, and comparing them with the job description. This may take a moment...`}
+                    Our AI is processing {resumeFiles.length} resume{resumeFiles.length > 1 ? 's' : ''}, extracting skills, and comparing them with the job description. This may take a moment...
                   </p>
-                  {loadingProgress.total > 0 && (
-                    <div className="mb-4 text-center">
-                      <span className="text-sm font-semibold text-primary-600">
-                        {loadingProgress.current} of {loadingProgress.total} completed
-                      </span>
-                    </div>
-                  )}
                   <div className="mt-4 w-full max-w-md mx-auto">
                     <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-300"
-                        style={{ 
-                          width: loadingProgress.total > 0 
-                            ? `${(loadingProgress.current / loadingProgress.total) * 100}%` 
-                            : '60%'
-                        }}
+                        className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-300 animate-pulse"
+                        style={{ width: '60%' }}
                       />
                     </div>
-                    {loadingProgress.total > 0 && (
-                      <div className="mt-2 text-center text-xs text-gray-500">
-                        {Math.round((loadingProgress.current / loadingProgress.total) * 100)}% complete
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
