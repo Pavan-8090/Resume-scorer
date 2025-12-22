@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios, { AxiosError } from 'axios';
 import { useDropzone } from 'react-dropzone';
 import BackendStatus from './BackendStatus';
@@ -48,6 +48,54 @@ export default function ResumeAnalyzer() {
   const [viewMode, setViewMode] = useState<'detailed' | 'comparison' | 'cards'>('detailed');
   const [sortBy, setSortBy] = useState<'score' | 'name'>('score');
   const [filterScore, setFilterScore] = useState<number | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  // Request notification permission on component mount
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+      
+      // Request permission if not already granted or denied
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then((permission) => {
+          setNotificationPermission(permission);
+        });
+      }
+    }
+  }, []);
+
+  // Function to show notification
+  const showNotification = (title: string, body: string, resumeCount?: number) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const notification = new Notification(title, {
+        body: body,
+        icon: '/logo.png',
+        badge: '/logo.png',
+        tag: 'resume-analysis',
+        requireInteraction: false,
+      });
+
+      // Close notification after 5 seconds
+      setTimeout(() => {
+        notification.close();
+      }, 5000);
+
+      // Handle click on notification
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    }
+
+    // Also update browser tab title
+    const originalTitle = document.title;
+    document.title = `✓ ${title} - ${originalTitle}`;
+    
+    // Reset title after 3 seconds
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 3000);
+  };
 
   const { getRootProps: getJobDescRootProps, getInputProps: getJobDescInputProps } = useDropzone({
     accept: {
@@ -98,6 +146,12 @@ export default function ResumeAnalyzer() {
     setError('');
     setLoading(true);
     setAnalyses([]);
+
+    // Request notification permission if not already granted
+    if ('Notification' in window && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+    }
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -167,6 +221,15 @@ export default function ResumeAnalyzer() {
       if (analysisResponse.data.analyses && analysisResponse.data.analyses.length > 0) {
         setAnalyses(analysisResponse.data.analyses);
         setSelectedAnalysisIndex(0);
+        
+        // Show notification when analysis completes
+        const resumeCount = analysisResponse.data.analyses.length;
+        const notificationTitle = 'Analysis Complete! 🎉';
+        const notificationBody = resumeCount === 1 
+          ? `Resume analysis completed successfully. Match score: ${analysisResponse.data.analyses[0].matchScore}%`
+          : `${resumeCount} resumes analyzed successfully. View results now!`;
+        
+        showNotification(notificationTitle, notificationBody, resumeCount);
       }
     } catch (err) {
       const axiosError = err as AxiosError;
@@ -556,6 +619,31 @@ ${'='.repeat(60)}
                 </div>
 
                 <BackendStatus />
+                
+                {/* Notification Permission Banner */}
+                {notificationPermission === 'default' && (
+                  <div className="bg-blue-50 border-2 border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm flex items-start">
+                    <svg className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="font-semibold mb-1">Enable Notifications</p>
+                      <p className="text-xs">Get notified when analysis completes, even if you're away from the page.</p>
+                    </div>
+                  </div>
+                )}
+                
+                {notificationPermission === 'denied' && (
+                  <div className="bg-yellow-50 border-2 border-yellow-200 text-yellow-700 px-4 py-3 rounded-xl text-sm flex items-start">
+                    <svg className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="font-semibold mb-1">Notifications Blocked</p>
+                      <p className="text-xs">Please enable notifications in your browser settings to get alerts when analysis completes.</p>
+                    </div>
+                  </div>
+                )}
                 
                 {error && (
                   <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start">
