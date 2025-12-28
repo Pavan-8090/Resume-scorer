@@ -23,7 +23,5 @@ coverage.xml
 *.md
 .env
 .env.local
-../frontend
-../chrome-extension
 
 

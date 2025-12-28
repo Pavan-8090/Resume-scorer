@@ -1,0 +1,35 @@
+[Unit]
+Description=ResumeChecker Docker Compose
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/path/to/ResumeChecker
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+TimeoutStartSec=0
+Restart=on-failure
+RestartSec=10
+
+# User and group (update with your user)
+User=YOUR_USER
+Group=YOUR_USER
+
+# Environment variables (optional, if not using .env file)
+# Environment="HF_TOKEN=your_token"
+# Environment="OPENAI_API_KEY=your_key"
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+
+
+
+
+
+

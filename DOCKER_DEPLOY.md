@@ -1,144 +1,120 @@
-# Docker Deployment Guide
 
-## Quick Start
+# Docker Cloud Deployment Guide (Beginner Friendly)
 
-### 1. Build Docker Images
+This guide will help you deploy your ResumeChecker app to any cloud server using Docker, even if you have no Docker experience.
 
-```bash
-# Build both backend and frontend images
-docker-compose build
+---
 
-# Or build individually
-docker-compose build backend
-docker-compose build frontend
-```
+## 1. Prerequisites
 
-### 2. Set Environment Variables
+- A cloud server (AWS EC2, DigitalOcean, Azure VM, etc.)
+- Docker Hub account (https://hub.docker.com/)
+- Docker and Docker Compose installed on your server
 
-Create a `.env` file in the root directory:
+---
 
-```env
-# Perplexity API (Primary)
-PERPLEXITY_API_KEY=your-perplexity-api-key-here
-PERPLEXITY_MODEL=sonar-deep-research
+## 2. Prepare Your Environment
 
-# OpenAI API (Fallback)
-OPENAI_API_KEY=your-openai-api-key-here
-OPENAI_MODEL=gpt-4
+1. **Create a `.env` file** in your project root with your API keys:
 
-# Hugging Face (Optional Fallback)
-HF_TOKEN=your-huggingface-token-here
-HF_MODEL_ID=all-MiniLM-L6-v2
+   ```env
+   PERPLEXITY_API_KEY=your-perplexity-api-key
+   OPENAI_API_KEY=your-openai-api-key
+   HF_TOKEN=your-huggingface-token
+   NEXT_PUBLIC_API_URL=http://localhost:5000
+   ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+   ```
 
-# API Configuration
-NEXT_PUBLIC_API_URL=http://localhost:5000
-ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-```
+2. **Log in to Docker Hub** on your local machine:
+   ```bash
+   docker login
+   ```
 
-### 3. Run with Docker Compose
+---
 
-```bash
-# Start all services
-docker-compose up -d
+## 3. Build and Push Docker Images
 
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-```
-
-### 4. Access the Application
-
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000
-- **Health Check**: http://localhost:5000/health
-
-## Individual Docker Images
-
-### Build Backend Image
+From your project root, run:
 
 ```bash
-cd backend_python
-docker build -t resumescore-backend:latest .
+# Build backend image
+docker build -t yourusername/resumescore-backend:latest -f backend_python/Dockerfile backend_python
+
+# Build frontend image
+docker build -t yourusername/resumescore-frontend:latest -f frontend/Dockerfile frontend
+
+# Push images to Docker Hub
+docker push yourusername/resumescore-backend:latest
+docker push yourusername/resumescore-frontend:latest
 ```
+Replace `yourusername` with your Docker Hub username.
 
-### Build Frontend Image
+---
 
-```bash
-cd frontend
-docker build -t resumescore-frontend:latest --build-arg NEXT_PUBLIC_API_URL=http://localhost:5000 .
+## 4. Update docker-compose.yml for Cloud
+
+Edit `docker-compose.yml` to use your images:
+
+```yaml
+services:
+  backend:
+    image: yourusername/resumescore-backend:latest
+    # ...rest unchanged
+  frontend:
+    image: yourusername/resumescore-frontend:latest
+    # ...rest unchanged
 ```
+Remove the `build:` sections and use `image:` as above.
 
-### Run Backend Container
+---
 
-```bash
-docker run -d \
-  --name resumescore-backend \
-  -p 5000:5000 \
-  -e PERPLEXITY_API_KEY=your-key \
-  -e OPENAI_API_KEY=your-key \
-  resumescore-backend:latest
-```
+## 5. Deploy on Your Cloud Server
 
-### Run Frontend Container
+1. **Copy your `.env` and `docker-compose.yml` to the server.**
+2. **On the server, run:**
+   ```bash
+   sudo docker-compose up -d
+   ```
 
-```bash
-docker run -d \
-  --name resumescore-frontend \
-  -p 3000:3000 \
-  -e NEXT_PUBLIC_API_URL=http://localhost:5000 \
-  resumescore-frontend:latest
-```
+---
 
-## Production Deployment
+## 6. Access Your Application
 
-For production, use `docker-compose.prod.yml`:
+- Frontend: `http://<your-server-ip>:3000`
+- Backend: `http://<your-server-ip>:5000`
 
-```bash
-docker-compose -f docker-compose.prod.yml up -d
-```
+---
 
-## Troubleshooting
+## 7. Useful Docker Commands
 
-### Check Container Status
+- Check running containers:
+  ```bash
+  docker ps
+  docker-compose ps
+  ```
+- View logs:
+  ```bash
+  docker-compose logs -f
+  docker-compose logs -f backend
+  docker-compose logs -f frontend
+  ```
+- Stop all services:
+  ```bash
+  docker-compose down
+  ```
+- Remove all containers and volumes:
+  ```bash
+  docker-compose down -v
+  ```
 
-```bash
-docker ps
-docker-compose ps
-```
+---
 
-### View Logs
+## 8. Troubleshooting
 
-```bash
-# All services
-docker-compose logs -f
+- If you change code, rebuild and push images again, then run `docker-compose up -d` on the server.
+- Health check: `curl http://<your-server-ip>:5000/health`
+- Make sure your cloud firewall allows ports 3000 and 5000.
 
-# Specific service
-docker-compose logs -f backend
-docker-compose logs -f frontend
-```
+---
 
-### Rebuild After Code Changes
-
-```bash
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-### Remove All Containers and Volumes
-
-```bash
-docker-compose down -v
-```
-
-## Image Sizes
-
-- **Backend**: ~2-3 GB (includes ML dependencies)
-- **Frontend**: ~200-300 MB
-
-## Health Checks
-
-Both services include health checks:
-- Backend: `curl http://localhost:5000/health`
-- Frontend: Check if port 3000 is accessible
+**Need help? Ask for step-by-step help for any part!**
